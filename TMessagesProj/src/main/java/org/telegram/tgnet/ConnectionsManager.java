@@ -878,6 +878,14 @@ public class ConnectionsManager extends BaseController {
     }
 
     public static void onRequestNewServerIpAndPort(final int second, final int currentAccount) {
+        // Self-hosted telesrv: never look for backup DC addresses through Google/Mozilla DNS TXT
+        // records. Those configs are signed for Telegram's network and would only leak traffic.
+        if (BuildVars.LOGS_ENABLED) {
+            FileLog.d("backup DC address lookup disabled (second = " + second + ")");
+        }
+        if (true) {
+            return;
+        }
         Utilities.globalQueue.postRunnable(() -> {
             boolean networkOnline = ApplicationLoader.isNetworkOnline();
             Utilities.stageQueue.postRunnable(() -> {
