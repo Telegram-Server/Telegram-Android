@@ -33,6 +33,7 @@ import org.telegram.messenger.ImageLocation;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.R;
+import org.telegram.messenger.TelesrvPermissions;
 import org.telegram.messenger.UserConfig;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLObject;
@@ -202,6 +203,11 @@ public class JoinGroupAlert extends BottomSheet {
             requestTextView.setTextColor(getThemedColor(Theme.key_featuredStickers_buttonText));
             requestTextView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
             requestTextView.setTypeface(AndroidUtilities.bold());
+            if (!TelesrvPermissions.getInstance(currentAccount).canJoinByType(isChannel)) {
+                requestTextView.setText(getString(R.string.TelesrvJoinRestricted));
+                requestTextView.setEnabled(false);
+                requestTextView.setAlpha(0.5f);
+            }
             requestTextView.setOnClickListener((view) -> {
                 AndroidUtilities.runOnUIThread(() -> {
                     if (!isDismissed()) {
@@ -335,6 +341,11 @@ public class JoinGroupAlert extends BottomSheet {
             joinTextView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
             joinTextView.setTypeface(AndroidUtilities.bold());
             linearLayout.addView(joinTextView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 48, Gravity.START, 14, 0, 14, 14));
+            if (!TelesrvPermissions.getInstance(currentAccount).canJoinByType(isJoinToChannel)) {
+                joinTextView.setText(getString(R.string.TelesrvJoinRestricted));
+                joinTextView.setEnabled(false);
+                joinTextView.setAlpha(0.5f);
+            }
             joinTextView.setOnClickListener(v -> {
                 dismiss();
                 final TLRPC.TL_messages_importChatInvite req = new TLRPC.TL_messages_importChatInvite();

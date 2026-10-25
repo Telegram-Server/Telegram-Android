@@ -11705,6 +11705,9 @@ public class MessageObject {
     }
 
     public static boolean canEditMessage(int currentAccount, TLRPC.Message message, TLRPC.Chat chat, boolean scheduled) {
+        if (!TelesrvPermissions.getInstance(currentAccount).allows(TelesrvPermissions.EDIT)) {
+            return false;
+        }
         if (scheduled && message.date < ConnectionsManager.getInstance(currentAccount).getCurrentTime() - 60) {
             return false;
         }
@@ -11787,6 +11790,10 @@ public class MessageObject {
 
     public static boolean canDeleteMessage(int currentAccount, boolean inScheduleMode, TLRPC.Message message, TLRPC.Chat chat) {
         if (message == null) {
+            return false;
+        }
+        // telesrv staff permissions gate messages.deleteMessages / channels.deleteMessages; scheduled messages are not covered.
+        if (!inScheduleMode && !TelesrvPermissions.getInstance(currentAccount).allows(TelesrvPermissions.DELETE)) {
             return false;
         }
         if (ChatObject.isChannelAndNotMegaGroup(chat) && message.action instanceof TLRPC.TL_messageActionChatJoinedByRequest) {

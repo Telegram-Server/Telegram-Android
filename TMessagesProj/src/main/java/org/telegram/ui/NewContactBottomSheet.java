@@ -68,6 +68,7 @@ import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.MessagesStorage;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
+import org.telegram.messenger.TelesrvPermissions;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
@@ -1092,6 +1093,11 @@ public class NewContactBottomSheet extends BottomSheet implements AdapterView.On
 
     @Override
     public void show() {
+        // telesrv staff permissions: importing a new contact is adding a contact.
+        if (!TelesrvPermissions.getInstance(currentAccount).allows(TelesrvPermissions.ADD_CONTACT)) {
+            TelesrvPermissions.showDenied(null);
+            return;
+        }
         super.show();
         firstNameField.getEditText().requestFocus();
         firstNameField.getEditText().setSelection(firstNameField.getEditText().length());

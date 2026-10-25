@@ -43,6 +43,7 @@ import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.PushListenerController;
 import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.StatsController;
+import org.telegram.messenger.TelesrvPermissions;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.Utilities;
 import org.telegram.utils.proxy.WebProxyConnectionTester;
@@ -435,6 +436,9 @@ public class ConnectionsManager extends BaseController {
                         error.text = errorText;
                         if (BuildVars.LOGS_ENABLED && error.code != -2000) {
                             FileLog.e(object + " got error " + error.code + " " + error.text);
+                        }
+                        if (TelesrvPermissions.isPermissionError(error)) {
+                            TelesrvPermissions.getInstance(currentAccount).onPermissionError(error);
                         }
                     }
                     if ((connectionType & ConnectionTypeDownload) != 0 && VideoPlayer.activePlayers.isEmpty()) {

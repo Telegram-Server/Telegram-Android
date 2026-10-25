@@ -125,6 +125,7 @@ import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.NotificationsController;
 import org.telegram.messenger.R;
 import org.telegram.messenger.SharedConfig;
+import org.telegram.messenger.TelesrvPermissions;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
@@ -8791,7 +8792,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             previewMenu[0].addView(muteItem);
         }
 
-        if (!isCommunityCell) {
+        if (!isCommunityCell && TelesrvPermissions.getInstance(currentAccount).canDeleteDialog(dialogId, DialogObject.isChatDialog(dialogId) ? getMessagesController().getChat(-dialogId) : null)) {
             ActionBarMenuSubItem deleteItem = new ActionBarMenuSubItem(getParentActivity(), false, true);
             deleteItem.setIconColor(getThemedColor(Theme.key_text_RedRegular));
             deleteItem.setTextColor(getThemedColor(Theme.key_text_RedBold));
@@ -9830,7 +9831,9 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                     } else {
                         canClearCacheCount++;
                     }
-                    canDeleteCount++;
+                    if (TelesrvPermissions.getInstance(currentAccount).canLeave(chat)) {
+                        canDeleteCount++;
+                    }
                 }
             } else {
                 final boolean isChat = DialogObject.isChatDialog(dialog.id);
@@ -9853,8 +9856,13 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                 } else {
                     canPinCount++;
                 }
-                canClearHistoryCount++;
-                canDeleteCount++;
+                TelesrvPermissions telesrvPermissions = TelesrvPermissions.getInstance(currentAccount);
+                if (telesrvPermissions.canClearHistory(dialog.id)) {
+                    canClearHistoryCount++;
+                }
+                if (telesrvPermissions.canDeleteDialog(dialog.id, chat)) {
+                    canDeleteCount++;
+                }
             }
         }
         if (deleteItem != null) {
@@ -9865,7 +9873,8 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             }
         }
         if (clearItem != null) {
-            if (canClearCacheCount != 0 && canClearCacheCount != count || canClearHistoryCount != 0 && canClearHistoryCount != count || communitiesCount > 0) {
+            if (canClearCacheCount != 0 && canClearCacheCount != count || canClearHistoryCount != 0 && canClearHistoryCount != count || communitiesCount > 0 ||
+                    canClearCacheCount == 0 && canClearHistoryCount == 0) {
                 clearItem.setVisibility(View.GONE);
             } else {
                 clearItem.setVisibility(View.VISIBLE);
@@ -9985,6 +9994,13 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
     }
 
     private boolean validateSlowModeDialog(long dialogId) {
+        if (checkCanWrite && addToGroupAlertString == null && initialDialogsType != DIALOGS_TYPE_BOT_REQUEST_PEER && initialDialogsType != DIALOGS_TYPE_BOT_SELECT_VERIFY) {
+            String telesrvError = TelesrvPermissions.getInstance(currentAccount).sendErrorText(dialogId);
+            if (telesrvError != null) {
+                AlertsCreator.showSimpleAlert(DialogsActivity.this, LocaleController.getString(R.string.SendMessageTitle), telesrvError);
+                return false;
+            }
+        }
         if (messagesCount <= 1 && (commentView == null || commentView.getVisibility() != View.VISIBLE || TextUtils.isEmpty(commentView.getFieldText()))) {
             return true;
         }
@@ -13766,10 +13782,12 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             });
         });
         io.addGap();
-        io.add(R.drawable.outline_groups_24, getString(R.string.NewGroup), () -> {
-            Bundle args = new Bundle();
-            presentFragment(new GroupCreateActivity(args));
-        });
+        if (TelesrvPermissions.getInstance(currentAccount).canCreate(false)) {
+            io.add(R.drawable.outline_groups_24, getString(R.string.NewGroup), () -> {
+                Bundle args = new Bundle();
+                presentFragment(new GroupCreateActivity(args));
+            });
+        }
         io.add(R.drawable.outline_saved_24, getString(R.string.SavedMessages), () -> {
             Bundle args = new Bundle();
             args.putLong("user_id", UserConfig.getInstance(currentAccount).getClientUserId());

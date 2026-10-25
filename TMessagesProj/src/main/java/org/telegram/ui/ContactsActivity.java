@@ -69,6 +69,7 @@ import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.MessagesStorage;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
+import org.telegram.messenger.TelesrvPermissions;
 import org.telegram.messenger.SecretChatHelper;
 import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.UserConfig;
@@ -220,6 +221,7 @@ public class ContactsActivity extends BaseFragment implements FactorAnimator.Tar
     public boolean onFragmentCreate() {
         super.onFragmentCreate();
         NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.contactsDidLoad);
+        NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.telesrvPermissionsChanged);
         NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.updateInterfaces);
         NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.encryptedChatCreated);
         NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.closeChats);
@@ -262,6 +264,7 @@ public class ContactsActivity extends BaseFragment implements FactorAnimator.Tar
     public void onFragmentDestroy() {
         super.onFragmentDestroy();
         NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.contactsDidLoad);
+        NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.telesrvPermissionsChanged);
         NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.updateInterfaces);
         NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.encryptedChatCreated);
         NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.closeChats);
@@ -696,11 +699,19 @@ public class ContactsActivity extends BaseFragment implements FactorAnimator.Tar
                                 AccountFrozenAlert.show(currentAccount);
                                 return;
                             }
+                            if (!TelesrvPermissions.getInstance(currentAccount).canCreate(false)) {
+                                TelesrvPermissions.showDenied(null);
+                                return;
+                            }
                             Bundle args = new Bundle();
                             presentFragment(new GroupCreateActivity(args), false);
                         } else if (row == 1) {
                             if (MessagesController.getInstance(currentAccount).isFrozen()) {
                                 AccountFrozenAlert.show(currentAccount);
+                                return;
+                            }
+                            if (!TelesrvPermissions.getInstance(currentAccount).canCreate(true)) {
+                                TelesrvPermissions.showDenied(null);
                                 return;
                             }
                             SharedPreferences preferences = MessagesController.getGlobalMainSettings();
@@ -1354,7 +1365,11 @@ public class ContactsActivity extends BaseFragment implements FactorAnimator.Tar
 
     @Override
     public void didReceivedNotification(int id, int account, Object... args) {
-        if (id == NotificationCenter.contactsDidLoad) {
+        if (id == NotificationCenter.telesrvPermissionsChanged) {
+            if (listViewAdapter != null) {
+                listViewAdapter.notifyDataSetChanged();
+            }
+        } else if (id == NotificationCenter.contactsDidLoad) {
             if (listViewAdapter != null) {
                 if (!sortByName) {
                     listViewAdapter.setSortType(2, true);

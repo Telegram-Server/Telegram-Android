@@ -163,6 +163,7 @@ import org.telegram.messenger.R;
 import org.telegram.messenger.SendMessagesHelper;
 import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.SvgHelper;
+import org.telegram.messenger.TelesrvPermissions;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
@@ -2227,6 +2228,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
         sharedMediaPreloader.addDelegate(this);
 
         getNotificationCenter().addObserver(this, NotificationCenter.updateInterfaces);
+        getNotificationCenter().addObserver(this, NotificationCenter.telesrvPermissionsChanged);
         getNotificationCenter().addObserver(this, NotificationCenter.didReceiveNewMessages);
         getNotificationCenter().addObserver(this, NotificationCenter.closeChats);
         getNotificationCenter().addObserver(this, NotificationCenter.closeProfileActivity);
@@ -2368,6 +2370,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
         }
 
         getNotificationCenter().removeObserver(this, NotificationCenter.updateInterfaces);
+        getNotificationCenter().removeObserver(this, NotificationCenter.telesrvPermissionsChanged);
         getNotificationCenter().removeObserver(this, NotificationCenter.closeChats);
         getNotificationCenter().removeObserver(this, NotificationCenter.closeProfileActivity);
         getNotificationCenter().removeObserver(this, NotificationCenter.didReceiveNewMessages);
@@ -9048,6 +9051,12 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
     public void didReceivedNotification(int id, int account, final Object... args) {
         if (id == NotificationCenter.uploadStoryEnd || id == NotificationCenter.chatWasBoostedByUser) {
             checkCanSendStoryForPosting();
+        } else if (id == NotificationCenter.telesrvPermissionsChanged) {
+            createActionBarMenu(true);
+            updateRowsIds();
+            if (listAdapter != null) {
+                listAdapter.notifyDataSetChanged();
+            }
         } else if (id == NotificationCenter.updateInterfaces) {
             int mask = (Integer) args[0];
             boolean infoChanged = (mask & MessagesController.UPDATE_MASK_AVATAR) != 0 || (mask & MessagesController.UPDATE_MASK_NAME) != 0 || (mask & MessagesController.UPDATE_MASK_STATUS) != 0 || (mask & MessagesController.UPDATE_MASK_EMOJI_STATUS) != 0;
@@ -10805,7 +10814,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                     divider = true;
                 }
 
-                if (!myProfile && showAddToContacts && user != null && !user.contact && !user.bot && !UserObject.isService(user.id)) {
+                if (!myProfile && showAddToContacts && user != null && !user.contact && !user.bot && !UserObject.isService(user.id) && TelesrvPermissions.getInstance(currentAccount).allows(TelesrvPermissions.ADD_CONTACT)) {
                     addToContactsRow = rowCount++;
                     divider = true;
                 }
@@ -10985,7 +10994,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                     }
                 }
 
-                if (lastSectionRow == -1 && currentChat.left && !currentChat.kicked) {
+                if (lastSectionRow == -1 && currentChat.left && !currentChat.kicked && TelesrvPermissions.getInstance(currentAccount).canJoin(currentChat)) {
                     long requestedTime = MessagesController.getNotificationsSettings(currentAccount).getLong("dialog_join_requested_time_" + dialogId, -1);
                     if (!(requestedTime > 0 && System.currentTimeMillis() - requestedTime < 1000 * 60 * 2)) {
                         if (actionsView == null || !actionsView.canHaveJoinAction()) {
@@ -12355,6 +12364,18 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
 
         isCallAvailable = callItemVisible;
 
+        TelesrvPermissions telesrvPermissions = TelesrvPermissions.getInstance(currentAccount);
+        if (!telesrvPermissions.allows(TelesrvPermissions.ADD_CONTACT)) {
+            otherItem.hideSubItem(add_contact);
+        }
+        if (userId != 0 && !(telesrvPermissions.allows(TelesrvPermissions.SEND) && telesrvPermissions.inSendWhitelist(userId))) {
+            otherItem.hideSubItem(start_secret_chat);
+        }
+        if (currentChat != null && !telesrvPermissions.canLeave(currentChat)) {
+            otherItem.hideSubItem(leave_group);
+            leaveAction = false;
+        }
+
         if (actionsView != null) {
             actionsView.beginApplyingActions();
             actionsView.set(ProfileActionsView.KEY_SHARE, shareAction);
@@ -12452,6 +12473,12 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
     }
 
     private void createAutoDeleteItem(Context context) {
+        // telesrv staff permissions count turning on or changing auto-delete as deleting.
+        if (!TelesrvPermissions.getInstance(currentAccount).allows(TelesrvPermissions.DELETE)) {
+            autoDeleteItem = null;
+            autoDeletePopupWrapper = null;
+            return;
+        }
         autoDeletePopupWrapper = new AutoDeletePopupWrapper(context, otherItem.getPopupLayout().getSwipeBack(), new AutoDeletePopupWrapper.Callback() {
 
             @Override

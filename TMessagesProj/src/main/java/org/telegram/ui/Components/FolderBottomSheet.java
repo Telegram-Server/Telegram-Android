@@ -48,6 +48,7 @@ import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
+import org.telegram.messenger.TelesrvPermissions;
 import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
 import org.telegram.tgnet.TLObject;
@@ -378,10 +379,27 @@ public class FolderBottomSheet extends BottomSheetWithRecyclerListView {
         }
 
         final ArrayList<TLRPC.InputPeer> inputPeers = new ArrayList<>();
+        // telesrv staff permissions: the server refuses the whole request if any chat may not be
+        // joined or left, so such chats are left out (and the others go through).
+        final TelesrvPermissions telesrvPermissions = TelesrvPermissions.getInstance(currentAccount);
+        boolean telesrvSkipped = false;
         for (int i = 0; i < peers.size(); ++i) {
             long did = DialogObject.getPeerDialogId(peers.get(i));
             if (selectedPeers.contains(did)) {
+                TLRPC.Chat chat = did < 0 ? getBaseFragment().getMessagesController().getChat(-did) : null;
+                if (chat != null && (deleting
+                        ? !ChatObject.isNotInChat(chat) && !telesrvPermissions.canLeave(chat)
+                        : ChatObject.isNotInChat(chat) && !telesrvPermissions.canJoin(chat))) {
+                    telesrvSkipped = true;
+                    continue;
+                }
                 inputPeers.add(getBaseFragment().getMessagesController().getInputPeer(did));
+            }
+        }
+        if (telesrvSkipped) {
+            TelesrvPermissions.showDenied(deleting ? null : LocaleController.getString(R.string.TelesrvJoinRestricted));
+            if (!deleting && inputPeers.isEmpty()) {
+                return;
             }
         }
 

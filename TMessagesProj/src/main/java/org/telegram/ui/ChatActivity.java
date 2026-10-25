@@ -183,6 +183,7 @@ import org.telegram.messenger.SecretChatHelper;
 import org.telegram.messenger.SendMessagesHelper;
 import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.SvgHelper;
+import org.telegram.messenger.TelesrvPermissions;
 import org.telegram.messenger.Timer;
 import org.telegram.messenger.TranslateController;
 import org.telegram.messenger.UserConfig;
@@ -3029,6 +3030,7 @@ public class ChatActivity extends BaseFragment implements
             .add(NotificationCenter.quickRepliesUpdated)
             .add(NotificationCenter.factCheckLoaded)
             .add(NotificationCenter.messagesFeeUpdated)
+            .add(NotificationCenter.telesrvPermissionsChanged)
             .add(NotificationCenter.starBalanceUpdated)
             .add(NotificationCenter.botForumTopicDidCreate)
             .add(NotificationCenter.botForumDraftUpdate)
@@ -4521,6 +4523,7 @@ public class ChatActivity extends BaseFragment implements
                     }
                 }
             }
+            updateTelesrvMenuItems();
             if (ChatObject.isMonoForum(currentChat) && ChatObject.canManageMonoForum(currentAccount, currentChat)) {
                 headerItem.lazilyAddSubItem(remove_fee, R.drawable.menu_paid_off, getString(R.string.DirectRemoveFee));
                 headerItem.lazilyAddSubItem(charge_fee, R.drawable.menu_feature_paid, getString(R.string.DirectChargeFee));
@@ -18835,6 +18838,21 @@ public class ChatActivity extends BaseFragment implements
             if (suggestEmojiPanel != null) {
                 suggestEmojiPanel.forceClose();
             }
+        } else if (chatMode != MODE_SAVED && (currentChat == null || !currentChat.left && !currentChat.kicked && ChatObject.canWriteToChat(currentChat)) && getTelesrvSendError() != null) {
+            // telesrv staff permissions: sending to this chat is restricted by the administrator.
+            bottomOverlayText.setText(getTelesrvSendError());
+            bottomOverlay.setVisibility(View.VISIBLE);
+            if (mentionListAnimation != null) {
+                mentionListAnimation.cancel();
+                mentionListAnimation = null;
+            }
+            mentionContainer.setVisibility(View.GONE);
+            mentionContainer.setTag(null);
+            updateMessageListAccessibilityVisibility();
+            hideKeyboard = true;
+            if (suggestEmojiPanel != null) {
+                suggestEmojiPanel.forceClose();
+            }
         } else if (currentChat != null && !ChatObject.canSendMessages(currentChat) && !ChatObject.canSendAnyMedia(currentChat) && !currentChat.gigagroup && (!ChatObject.isChannel(currentChat) || currentChat.megagroup)) {
             if (currentChat.default_banned_rights != null && currentChat.default_banned_rights.send_messages) {
                 boolean unlockByBoosts = ChatObject.isPossibleRemoveChatRestrictionsByBoosts(currentChat);
@@ -19019,7 +19037,7 @@ public class ChatActivity extends BaseFragment implements
         }
         if (clearHistoryItem != null && chatInfo != null) {
             boolean visible = chatInfo.can_delete_channel || !ChatObject.isChannel(currentChat) || currentChat.megagroup && !ChatObject.isPublic(currentChat);
-            clearHistoryItem.setVisibility(visible ? View.VISIBLE : View.GONE);
+            clearHistoryItem.setVisibility(visible && TelesrvPermissions.getInstance(currentAccount).canClearHistory(dialog_id) ? View.VISIBLE : View.GONE);
         }
         checkAndUpdateAvatar();
     }
@@ -24598,6 +24616,8 @@ public class ChatActivity extends BaseFragment implements
             if (messageObject != null) {
                 messageObject.setMyPaidReactionDialogId(peer);
             }
+        } else if (id == NotificationCenter.telesrvPermissionsChanged) {
+            updateTelesrvPermissions();
         } else if (id == NotificationCenter.messagesFeeUpdated) {
             final long did = (long) args[0];
             if (dialog_id != did) return;
@@ -27898,6 +27918,10 @@ public class ChatActivity extends BaseFragment implements
                 if (ChatObject.isNotInChat(currentChat) && !UserObject.isBotForum(currentUser) && (ChatObject.isForum(currentChat) || !isThreadChat() || currentChat.join_to_send)) {
                     if (getMessagesController().isJoiningChannel(currentChat.id)) {
                         showBottomOverlayProgress(true, false);
+                    } else if (!TelesrvPermissions.getInstance(currentAccount).canJoin(currentChat)) {
+                        bottomOverlayChatText.setTextInfo(LocaleController.getString(R.string.TelesrvJoinRestricted));
+                        bottomOverlayChatText.setEnabled(false);
+                        showBottomOverlayProgress(false, false);
                     } else {
                         if (currentChat.join_request) {
                             shouldApply = true;
@@ -29481,12 +29505,12 @@ public class ChatActivity extends BaseFragment implements
                 if (addToContactsButton != null) {
                     addToContactsButton.setVisibility(View.GONE);
                 }
-            } else if (!user.contact && !user.self && showAdd) {
+            } else if (!user.contact && !user.self && showAdd && (showArchive || TelesrvPermissions.getInstance(currentAccount).allows(TelesrvPermissions.ADD_CONTACT))) {
                 createTopPanel();
                 if (topChatPanelView == null) {
                     return;
                 }
-                addContactItem.setVisibility(View.VISIBLE);
+                addContactItem.setVisibility(TelesrvPermissions.getInstance(currentAccount).allows(TelesrvPermissions.ADD_CONTACT) ? View.VISIBLE : View.GONE);
                 addContactItem.setText(LocaleController.getString(R.string.AddToContacts));
                 addToContactsButton.setVisibility(View.VISIBLE);
                 if (showArchive) {
@@ -44459,6 +44483,39 @@ public class ChatActivity extends BaseFragment implements
         }
     }
 
+    // telesrv staff permissions: the reason sending here is refused, or null. Saved Messages are never restricted.
+    private String getTelesrvSendError() {
+        if (chatMode == MODE_QUICK_REPLIES) {
+            return null;
+        }
+        return TelesrvPermissions.getInstance(currentAccount).sendErrorText(dialog_id);
+    }
+
+    private void updateTelesrvMenuItems() {
+        if (headerItem == null) {
+            return;
+        }
+        TelesrvPermissions permissions = TelesrvPermissions.getInstance(currentAccount);
+        if (clearHistoryItem != null) {
+            boolean visible = chatInfo == null || chatInfo.can_delete_channel || !ChatObject.isChannel(currentChat) || currentChat.megagroup && !ChatObject.isPublic(currentChat);
+            clearHistoryItem.setVisibility(visible && permissions.canClearHistory(dialog_id) ? View.VISIBLE : View.GONE);
+        }
+        if (headerItem.hasSubItem(delete_chat)) {
+            headerItem.setSubItemShown(delete_chat, permissions.canDeleteDialog(dialog_id, currentChat));
+        }
+    }
+
+    private void updateTelesrvPermissions() {
+        updateTelesrvMenuItems();
+        updateSecretStatus();
+        updateBottomOverlay(true);
+        updateTopPanel(true);
+        // The selection toolbar counted deletable/editable messages under the old permissions.
+        if (actionBar != null && actionBar.isActionModeShowed()) {
+            clearSelectionMode();
+        }
+    }
+
     private void checkLeaveChannelButton() {
         if (headerItem == null || chatMode == MODE_SAVED) return;
         if (!headerItem.hasSubItem(delete_chat)) {
@@ -44482,6 +44539,7 @@ public class ChatActivity extends BaseFragment implements
                 }
             }
         }
+        updateTelesrvMenuItems();
     }
 
     public boolean supportsThanosEffect() {

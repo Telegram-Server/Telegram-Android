@@ -44,6 +44,7 @@ import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.MessagesStorage;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
+import org.telegram.messenger.TelesrvPermissions;
 import org.telegram.messenger.SendMessagesHelper;
 import org.telegram.messenger.UserObject;
 import org.telegram.messenger.utils.PhotoUtilities;
@@ -145,6 +146,11 @@ public class ContactAddActivity extends BaseFragment implements NotificationCent
 
     @Override
     public boolean onFragmentCreate() {
+        // Adding and editing contacts both go through contacts.addContact, which telesrv staff permissions gate.
+        if (!TelesrvPermissions.getInstance(currentAccount).allows(TelesrvPermissions.ADD_CONTACT)) {
+            TelesrvPermissions.showDenied(null);
+            return false;
+        }
         getNotificationCenter().addObserver(this, NotificationCenter.updateInterfaces);
         getNotificationCenter().addObserver(this, NotificationCenter.dialogPhotosUpdate);
         user_id = getArguments().getLong("user_id", 0);

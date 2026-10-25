@@ -2364,6 +2364,10 @@ public class ContactsController extends BaseController {
         if (user == null) {
             return;
         }
+        if (!TelesrvPermissions.getInstance(currentAccount).allows(TelesrvPermissions.ADD_CONTACT)) {
+            TelesrvPermissions.showDenied(null);
+            return;
+        }
 
         final TLRPC.TL_contacts_addContact req = new TLRPC.TL_contacts_addContact();
         req.id = getMessagesController().getInputUser(user);

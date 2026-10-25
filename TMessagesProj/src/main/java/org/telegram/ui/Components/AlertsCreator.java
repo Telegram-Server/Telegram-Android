@@ -100,6 +100,7 @@ import org.telegram.messenger.SecretChatHelper;
 import org.telegram.messenger.SendMessagesHelper;
 import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.SvgHelper;
+import org.telegram.messenger.TelesrvPermissions;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
@@ -287,6 +288,10 @@ public class AlertsCreator {
 
     public static Dialog processError(int currentAccount, TLRPC.TL_error error, BaseFragment fragment, TLObject request, Object... args) {
         if (error == null || error.code == 406 || error.text == null) {
+            return null;
+        }
+        if (TelesrvPermissions.isPermissionError(error)) {
+            // Already shown by the global handler in ConnectionsManager.
             return null;
         }
         if ("BALANCE_TOO_LOW".equalsIgnoreCase(error.text)) {

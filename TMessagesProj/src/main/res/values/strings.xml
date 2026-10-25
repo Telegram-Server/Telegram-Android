@@ -11562,4 +11562,8 @@
     <string name="TelesrvSignUpDisabled">Sign-up is closed on this server. Please contact the administrator to get an account.</string>
     <string name="TelesrvCodeLoginDisabled">Login codes are turned off on this server. Sign in with your password.</string>
     <string name="TelesrvLoginFailed">Couldn\'t sign in. Please try again.</string>
+    <string name="TelesrvPermissionDenied">The administrator has restricted this action.</string>
+    <string name="TelesrvSendRestricted">The administrator has restricted your ability to send messages.</string>
+    <string name="TelesrvSendWhitelistRestricted">You can only send messages to selected contacts.</string>
+    <string name="TelesrvJoinRestricted">The administrator has restricted joining.</string>
 </resources>

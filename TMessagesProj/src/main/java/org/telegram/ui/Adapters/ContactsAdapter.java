@@ -29,6 +29,7 @@ import org.telegram.messenger.FileLog;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.R;
+import org.telegram.messenger.TelesrvPermissions;
 import org.telegram.messenger.UserConfig;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLRPC;
@@ -554,6 +555,7 @@ public class ContactsAdapter extends RecyclerListView.SectionsAdapter {
                 break;
             case TEXT_CELL:
                 TextCell textCell = (TextCell) holder.itemView;
+                textCell.setAlpha(1f);
                 if (needPhonebook || !isAdmin) {
                     textCell.setColors(Theme.key_windowBackgroundWhiteBlackText, Theme.key_windowBackgroundWhiteBlackText);
                 } else {
@@ -577,6 +579,10 @@ public class ContactsAdapter extends RecyclerListView.SectionsAdapter {
                             textCell.setTextAndValueAndColorfulIcon(getString(R.string.NewGroup), "", false, R.drawable.settings_group, 0xFF1CA5ED, 0xFF1488E1, false);
                         } else if (position == 1) {
                             textCell.setTextAndValueAndColorfulIcon(getString(R.string.NewChannel), "", false, R.drawable.settings_channel, 0xFF55CA47, 0xFF27B434, false);
+                        }
+                        // telesrv staff permissions: the entry stays in place, dimmed; tapping it explains the refusal.
+                        if ((position == 0 || position == 1) && !TelesrvPermissions.getInstance(currentAccount).canCreate(position == 1)) {
+                            textCell.setAlpha(0.5f);
                         }
                     }
                 } else {

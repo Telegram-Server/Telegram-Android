@@ -275,6 +275,7 @@ public class NotificationCenter {
     public static final int messagesFeeUpdated = totalEvents++;
     public static final int commonChatsLoaded = totalEvents++;
     public static final int appConfigUpdated = totalEvents++;
+    public static final int telesrvPermissionsChanged = totalEvents++;
     public static final int activeAuctionsUpdated = totalEvents++;
     public static final int conferenceEmojiUpdated = totalEvents++;
     public static final int contentSettingsLoaded = totalEvents++;

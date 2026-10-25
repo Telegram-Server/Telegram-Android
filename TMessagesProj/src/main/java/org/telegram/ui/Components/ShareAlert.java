@@ -85,6 +85,7 @@ import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.messenger.SendMessagesHelper;
 import org.telegram.messenger.SharedConfig;
+import org.telegram.messenger.TelesrvPermissions;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
@@ -1949,6 +1950,16 @@ public class ShareAlert extends BottomSheet implements NotificationCenter.Notifi
             return;
         }
         if (topicsGridView.getVisibility() != View.GONE || parentActivity == null) {
+            return;
+        }
+
+        String telesrvError = selectedDialogs.indexOfKey(dialog.id) >= 0 ? null : TelesrvPermissions.getInstance(currentAccount).sendErrorText(dialog.id);
+        if (telesrvError != null) {
+            AlertDialog.Builder builder = new AlertDialog.Builder(parentActivity);
+            builder.setTitle(LocaleController.getString(R.string.SendMessageTitle));
+            builder.setMessage(telesrvError);
+            builder.setNegativeButton(LocaleController.getString(R.string.OK), null);
+            builder.show();
             return;
         }
 

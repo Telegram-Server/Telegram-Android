@@ -2632,6 +2632,7 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     private void applyAppConfig(TLRPC.TL_jsonObject object) {
+        TelesrvPermissions.getInstance(currentAccount).applyAppConfig(object);
         SharedPreferences.Editor editor = mainPreferences.edit();
         boolean changed = false;
         boolean storiesChanged = false;
@@ -9983,10 +9984,19 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     public void deleteDialog(final long did, int onlyHistory, boolean revoke) {
+        if (onlyHistory != 2 && DialogObject.isUserDialog(did) && !TelesrvPermissions.getInstance(currentAccount).canClearHistory(did)) {
+            TelesrvPermissions.showDenied(null);
+            return;
+        }
         deleteDialog(did, 1, onlyHistory, 0, revoke, null, 0);
     }
 
     public void setDialogHistoryTTL(long did, int ttl) {
+        // telesrv staff permissions count turning on or changing auto-delete as deleting.
+        if (ttl != 0 && !TelesrvPermissions.getInstance(currentAccount).allows(TelesrvPermissions.DELETE)) {
+            TelesrvPermissions.showDenied(null);
+            return;
+        }
         TLRPC.TL_messages_setHistoryTTL req = new TLRPC.TL_messages_setHistoryTTL();
         req.peer = getInputPeer(did);
         req.period = ttl;
@@ -15038,6 +15048,11 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     public int createChat(String title, ArrayList<Long> selectedContacts, String about, int type, boolean forImport, Location location, String locationAddress, int ttlPeriod, BaseFragment fragment) {
+        if (!TelesrvPermissions.getInstance(currentAccount).canCreate(type == ChatObject.CHAT_TYPE_CHANNEL)) {
+            TelesrvPermissions.showDenied(null);
+            AndroidUtilities.runOnUIThread(() -> getNotificationCenter().postNotificationName(NotificationCenter.chatDidFailCreate));
+            return 0;
+        }
         if (type == ChatObject.CHAT_TYPE_CHAT && !forImport) {
             TLRPC.TL_messages_createChat req = new TLRPC.TL_messages_createChat();
             req.title = title;
@@ -15632,6 +15647,13 @@ public class MessagesController extends BaseController implements NotificationCe
         if (botHash == null || isChannel && !isMegagroup) {
             if (isChannel) {
                 if (inputUser instanceof TLRPC.TL_inputUserSelf) {
+                    if (!TelesrvPermissions.getInstance(currentAccount).canJoin(chat)) {
+                        TelesrvPermissions.showDenied(LocaleController.getString(R.string.TelesrvJoinRestricted));
+                        if (onError != null) {
+                            onError.run(null);
+                        }
+                        return;
+                    }
                     if (joiningToChannels.contains(chatId)) {
                         if (onError != null) {
                             onError.run(null);
@@ -15827,6 +15849,10 @@ public class MessagesController extends BaseController implements NotificationCe
         TLRPC.Chat ownerChat = getChat(chatId);
         boolean self = peer instanceof TLRPC.TL_inputPeerUser && UserObject.isUserSelf(getMessagesController().getUser(peer.user_id));
         boolean isChannel = ChatObject.isChannel(ownerChat);
+        if (self && ownerChat != null && !ownerChat.left && !ownerChat.kicked && !(ownerChat.creator && forceDelete) && !TelesrvPermissions.getInstance(currentAccount).canLeave(ownerChat)) {
+            TelesrvPermissions.showDenied(null);
+            return;
+        }
         if (isChannel) {
             if (self) {
                 if (ownerChat.creator && forceDelete) {
@@ -19195,6 +19221,10 @@ public class MessagesController extends BaseController implements NotificationCe
                 getMessagesStorage().updateChatInfo(update.chat_id, update.user_id, 1, 0, update.version);
             } else if (baseUpdate instanceof TL_update.TL_updateDcOptions || baseUpdate instanceof TL_update.TL_updateConfig) {
                 getConnectionsManager().updateDcSettings();
+                if (baseUpdate instanceof TL_update.TL_updateConfig) {
+                    // telesrv pushes updateConfig when per-account app config (e.g. staff permissions) changes.
+                    AndroidUtilities.runOnUIThread(() -> loadAppConfig(true));
+                }
             } else if (baseUpdate instanceof TL_update.TL_updateEncryption) {
                 getSecretChatHelper().processUpdateEncryption((TL_update.TL_updateEncryption) baseUpdate, usersDict);
             } else if (baseUpdate instanceof TL_update.TL_updatePeerBlocked) {
