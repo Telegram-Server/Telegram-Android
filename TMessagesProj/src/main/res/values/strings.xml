@@ -11548,4 +11548,18 @@
     <string name="CreateManagedBotUsernameBotLimit">This bot already has a Premium username. Remove it before adding another.</string>
     <string name="CreateManagedBotUsernameSuffixMissing">The username must end in %1$s.</string>
     <string name="CreateManagedBotUsernameCheckFailed">Couldn\'t check this username. Please try again.</string>
+    <string name="TelesrvLoginPasswordTitle">Enter your password</string>
+    <string name="TelesrvLoginPasswordText">Enter the login password of %1$s.</string>
+    <string name="TelesrvLoginUseCode">Sign in with a code instead</string>
+    <string name="TelesrvForgotPasswordText">Sign in with a login code first. You can then reset your login password in Settings.</string>
+    <string name="TelesrvForgotPasswordNoCode">Login codes are turned off on this server. Please contact the administrator to reset your login password.</string>
+    <string name="TelesrvSignUpTitle">Create your account</string>
+    <string name="TelesrvSignUpText">%1$s has no account yet. Enter your name and choose a login password.</string>
+    <string name="TelesrvNoLoginPasswordTitle">No login password</string>
+    <string name="TelesrvNoLoginPasswordText">This account has no login password yet. Do you want to sign in with a code instead?</string>
+    <string name="TelesrvNoLoginPasswordContactAdmin">This account has no login password. Please contact the administrator.</string>
+    <string name="TelesrvUseCode">Use code</string>
+    <string name="TelesrvSignUpDisabled">Sign-up is closed on this server. Please contact the administrator to get an account.</string>
+    <string name="TelesrvCodeLoginDisabled">Login codes are turned off on this server. Sign in with your password.</string>
+    <string name="TelesrvLoginFailed">Couldn\'t sign in. Please try again.</string>
 </resources>

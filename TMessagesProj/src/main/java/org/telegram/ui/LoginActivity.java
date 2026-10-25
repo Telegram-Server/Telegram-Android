@@ -142,6 +142,7 @@ import org.telegram.messenger.PushListenerController;
 import org.telegram.messenger.R;
 import org.telegram.messenger.SRPHelper;
 import org.telegram.messenger.SharedConfig;
+import org.telegram.messenger.TelesrvLoginConfig;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.Utilities;
 import org.telegram.tgnet.ConnectionsManager;
@@ -150,6 +151,7 @@ import org.telegram.tgnet.SerializedData;
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.tgnet.tl.TL_account;
+import org.telegram.tgnet.tl.TL_telesrv;
 import org.telegram.tgnet.tl.TL_update;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.AlertDialog;
@@ -258,7 +260,9 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
             VIEW_CODE_FRAGMENT_SMS = 15,
             VIEW_CODE_WORD = 16,
             VIEW_CODE_PHRASE = 17,
-            VIEW_PAY = 18;
+            VIEW_PAY = 18,
+            VIEW_TELESRV_PASSWORD = 19,
+            VIEW_TELESRV_SIGNUP = 20;
 
     public final static int COUNTRY_STATE_NOT_SET_OR_VALID = 0,
             COUNTRY_STATE_EMPTY = 1,
@@ -306,7 +310,9 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
             VIEW_CODE_FRAGMENT_SMS,
             VIEW_CODE_WORD,
             VIEW_CODE_PHRASE,
-            VIEW_PAY
+            VIEW_PAY,
+            VIEW_TELESRV_PASSWORD,
+            VIEW_TELESRV_SIGNUP
     })
     private @interface ViewNumber {}
 
@@ -319,7 +325,7 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
 
     @ViewNumber
     private int currentViewNum;
-    private final SlideView[] views = new SlideView[19];
+    private final SlideView[] views = new SlideView[21];
     private CustomPhoneKeyboardView keyboardView;
     private ValueAnimator keyboardAnimator;
     private boolean paid;
@@ -685,6 +691,12 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
         views[VIEW_CODE_WORD] = new LoginActivityPhraseView(context, AUTH_TYPE_WORD);
         views[VIEW_CODE_PHRASE] = new LoginActivityPhraseView(context, AUTH_TYPE_PHRASE);
         views[VIEW_PAY] = new LoginPayView(context);
+        views[VIEW_TELESRV_PASSWORD] = new TelesrvPasswordView(context);
+        views[VIEW_TELESRV_SIGNUP] = new TelesrvSignUpView(context);
+
+        if (activityMode == MODE_LOGIN) {
+            TelesrvLoginConfig.getInstance(currentAccount).refresh(null);
+        }
 
         for (int a = 0; a < views.length; a++) {
             views[a].setVisibility(a == 0 ? View.VISIBLE : View.GONE);
@@ -722,6 +734,11 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
                     savedInstanceState = null;
                     clearCurrentState();
                 }
+            } else if (currentViewNum == VIEW_TELESRV_PASSWORD || currentViewNum == VIEW_TELESRV_SIGNUP) {
+                // telesrv SRP challenges are single-use and expire after 5 minutes: start over.
+                currentViewNum = VIEW_PHONE_INPUT;
+                savedInstanceState = null;
+                clearCurrentState();
             }
         }
 
@@ -812,7 +829,7 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
                 currentDoneType = DONE_TYPE_FLOATING;
                 boolean needFloatingButton = a == VIEW_PHONE_INPUT || a == VIEW_REGISTER ||
                         a == VIEW_PASSWORD || a == VIEW_NEW_PASSWORD_STAGE_1 || a == VIEW_NEW_PASSWORD_STAGE_2 ||
-                        a == VIEW_ADD_EMAIL;
+                        a == VIEW_ADD_EMAIL || a == VIEW_TELESRV_PASSWORD || a == VIEW_TELESRV_SIGNUP;
                 showDoneButton(needFloatingButton, false);
                 if (a == VIEW_CODE_MESSAGE || a == VIEW_CODE_SMS || a == VIEW_CODE_FLASH_CALL || a == VIEW_CODE_CALL) {
                     currentDoneType = DONE_TYPE_ACTION;
@@ -1501,7 +1518,8 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
 
     public void setPage(@ViewNumber int page, boolean animated, Bundle params, boolean back) {
         boolean needFloatingButton = page == VIEW_PHONE_INPUT || page == VIEW_REGISTER || page == VIEW_PASSWORD ||
-                page == VIEW_NEW_PASSWORD_STAGE_1 || page == VIEW_NEW_PASSWORD_STAGE_2 || page == VIEW_ADD_EMAIL || page == VIEW_CODE_PHRASE || page == VIEW_CODE_WORD;
+                page == VIEW_NEW_PASSWORD_STAGE_1 || page == VIEW_NEW_PASSWORD_STAGE_2 || page == VIEW_ADD_EMAIL || page == VIEW_CODE_PHRASE || page == VIEW_CODE_WORD ||
+                page == VIEW_TELESRV_PASSWORD || page == VIEW_TELESRV_SIGNUP;
         if (page == currentViewNum) {
             animated = false;
         }
@@ -1982,6 +2000,8 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
         private boolean ignoreOnPhoneChangePaste = false;
         private boolean nextPressed = false;
         private boolean confirmedNumber = false;
+        // The user chose code login for the next attempt instead of the telesrv login password.
+        private boolean forceCodeLogin = false;
 
         private int titleClickCount = 0;
         private long lastTitleClick = 0;
@@ -2914,7 +2934,7 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
                                 allowReadCallLog = true;
                                 allowReadPhoneNumbers = true;
                             }
-                            if (checkPermissions) {
+                            if (checkPermissions && !willUseTelesrvPasswordLogin()) {
                                 permissionsItems.clear();
                                 if (!allowCall) {
                                     permissionsItems.add(Manifest.permission.READ_PHONE_STATE);
@@ -2991,7 +3011,7 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     allowReadPhoneNumbers = getParentActivity().checkSelfPermission(Manifest.permission.READ_PHONE_NUMBERS) == PackageManager.PERMISSION_GRANTED;
                 }
-                if (checkPermissions) {
+                if (checkPermissions && !willUseTelesrvPasswordLogin()) {
                     permissionsItems.clear();
                     if (!allowCall) {
                         permissionsItems.add(Manifest.permission.READ_PHONE_STATE);
@@ -3073,6 +3093,28 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
                             return;
                         }
                     }
+                }
+            }
+
+            if (activityMode == MODE_LOGIN) {
+                TelesrvLoginConfig telesrvConfig = TelesrvLoginConfig.getInstance(currentAccount);
+                if (!telesrvConfig.isRefreshed()) {
+                    // The login entry depends on the server's switches: wait for the first refresh.
+                    needShowProgress(0);
+                    telesrvConfig.refresh(() -> {
+                        needHideProgress(false);
+                        if (getParentActivity() != null && currentViewNum == VIEW_PHONE_INPUT) {
+                            confirmedNumber = true;
+                            onNextPressed(code);
+                        }
+                    });
+                    return;
+                }
+                boolean useCode = forceCodeLogin;
+                forceCodeLogin = false;
+                if (telesrvConfig.isPasswordLoginEnabled() && !useCode) {
+                    requestTelesrvLoginPassword(phone, code);
+                    return;
                 }
             }
 
@@ -3219,6 +3261,21 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
                                     needShowAlert(getString(R.string.RestorePasswordNoEmailTitle), error1.text);
                                 }
                             }), ConnectionsManager.RequestFlagFailOnServerErrors | ConnectionsManager.RequestFlagWithoutLogin);
+                        } else if (error.text.contains("CODE_LOGIN_DISABLED") && activityMode == MODE_LOGIN) {
+                            // The cached telesrv switches were stale: code login is off, use the login password.
+                            TelesrvLoginConfig telesrvConfig = TelesrvLoginConfig.getInstance(currentAccount);
+                            telesrvConfig.refresh(() -> {
+                                if (getParentActivity() == null || currentViewNum != VIEW_PHONE_INPUT) {
+                                    return;
+                                }
+                                needShowAlert(getString(R.string.AppName), getString(R.string.TelesrvCodeLoginDisabled));
+                                if (telesrvConfig.isPasswordLoginEnabled()) {
+                                    confirmedNumber = true;
+                                    onNextPressed(code);
+                                }
+                            });
+                        } else if (error.text.contains("SIGN_UP_DISABLED")) {
+                            needShowAlert(getString(R.string.AppName), getString(R.string.TelesrvSignUpDisabled));
                         } else if (error.text.contains("PHONE_NUMBER_INVALID")) {
                             needShowInvalidAlert(LoginActivity.this, phone, phoneInputData, false);
                         } else if (error.text.contains("PHONE_PASSWORD_FLOOD")) {
@@ -3244,6 +3301,71 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
                     needHideProgress(false);
                 }
             }), ConnectionsManager.RequestFlagFailOnServerErrors | ConnectionsManager.RequestFlagWithoutLogin | ConnectionsManager.RequestFlagTryDifferentDc | ConnectionsManager.RequestFlagEnableUnauthorized);
+            needShowProgress(reqId);
+        }
+
+        // Password login needs none of the phone permissions that code auto-detection asks for.
+        private boolean willUseTelesrvPasswordLogin() {
+            if (activityMode != MODE_LOGIN || forceCodeLogin) {
+                return false;
+            }
+            TelesrvLoginConfig telesrvConfig = TelesrvLoginConfig.getInstance(currentAccount);
+            return telesrvConfig.isRefreshed() && telesrvConfig.isPasswordLoginEnabled();
+        }
+
+        // telesrv.getLoginPassword decides between password sign-in and password sign-up.
+        private void requestTelesrvLoginPassword(String phone, String code) {
+            final Bundle params = new Bundle();
+            params.putString("phone", "+" + codeField.getText() + " " + phoneField.getText());
+            params.putString("phoneFormated", phone);
+            if (currentCountry != null) {
+                params.putString("country", currentCountry.code);
+            }
+            PhoneInputData phoneInputData = new PhoneInputData();
+            phoneInputData.phoneNumber = "+" + codeField.getText() + " " + phoneField.getText();
+            phoneInputData.country = currentCountry;
+            phoneInputData.patterns = phoneFormatMap.get(codeField.getText().toString());
+
+            ConnectionsManager.getInstance(currentAccount).cleanup(false);
+            nextPressed = true;
+            TL_telesrv.getLoginPassword req = new TL_telesrv.getLoginPassword();
+            req.phone_number = phone;
+            int reqId = ConnectionsManager.getInstance(currentAccount).sendRequest(req, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
+                nextPressed = false;
+                needHideProgress(false);
+                if (response instanceof TL_account.Password) {
+                    TL_account.Password password = (TL_account.Password) response;
+                    putTelesrvPassword(params, password);
+                    setPage(password.has_password ? VIEW_TELESRV_PASSWORD : VIEW_TELESRV_SIGNUP, true, params, false);
+                    return;
+                }
+                if (error == null || error.text == null) {
+                    return;
+                }
+                if (error.text.equals("PASSWORD_LOGIN_NOT_SET")) {
+                    showTelesrvNoLoginPasswordAlert(() -> {
+                        forceCodeLogin = true;
+                        confirmedNumber = true;
+                        onNextPressed(code);
+                    });
+                } else if (error.text.equals("SIGN_UP_DISABLED")) {
+                    needShowAlert(getString(R.string.AppName), getString(R.string.TelesrvSignUpDisabled));
+                } else if (error.text.equals("PASSWORD_LOGIN_DISABLED")) {
+                    // Switched off since the last refresh: fall back to code login.
+                    TelesrvLoginConfig telesrvConfig = TelesrvLoginConfig.getInstance(currentAccount);
+                    telesrvConfig.markPasswordLoginDisabled();
+                    telesrvConfig.refresh(null);
+                    forceCodeLogin = true;
+                    confirmedNumber = true;
+                    onNextPressed(code);
+                } else if (error.text.contains("PHONE_NUMBER_INVALID")) {
+                    needShowInvalidAlert(LoginActivity.this, phone, phoneInputData, false);
+                } else if (error.text.startsWith("FLOOD_WAIT")) {
+                    showTelesrvFloodWait(error.text);
+                } else if (error.code != -1000) {
+                    needShowAlert(getString(R.string.RestorePasswordNoEmailTitle), error.text);
+                }
+            }), ConnectionsManager.RequestFlagFailOnServerErrors | ConnectionsManager.RequestFlagWithoutLogin);
             needShowProgress(reqId);
         }
 
@@ -8763,6 +8885,664 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
             void onDismiss(PhoneNumberConfirmView confirmView);
         }
     }
+
+    // region telesrv password login (TgSever docs/password-login.md)
+
+    private static void putTelesrvPassword(Bundle params, TL_account.Password password) {
+        SerializedData data = new SerializedData(password.getObjectSize());
+        password.serializeToStream(data);
+        params.putString("telesrvPassword", Utilities.bytesToHex(data.toByteArray()));
+    }
+
+    private static TL_account.Password readTelesrvPassword(Bundle params) {
+        String hex = params.getString("telesrvPassword");
+        if (hex == null) {
+            return null;
+        }
+        SerializedData data = new SerializedData(Utilities.hexToBytes(hex));
+        return TL_account.Password.TLdeserialize(data, data.readInt32(false), false);
+    }
+
+    private void showTelesrvFloodWait(String errorText) {
+        int time = Utilities.parseInt(errorText);
+        String timeString;
+        if (time < 60) {
+            timeString = LocaleController.formatPluralString("Seconds", time);
+        } else {
+            timeString = LocaleController.formatPluralString("Minutes", time / 60);
+        }
+        needShowAlert(getString(R.string.RestorePasswordNoEmailTitle), LocaleController.formatString(R.string.FloodWaitTime, timeString));
+    }
+
+    // The account exists but has no login password: let the user decide whether to use a code.
+    private void showTelesrvNoLoginPasswordAlert(Runnable useCode) {
+        if (getParentActivity() == null) {
+            return;
+        }
+        if (TelesrvLoginConfig.getInstance(currentAccount).isCodeLoginDisabled()) {
+            needShowAlert(getString(R.string.TelesrvNoLoginPasswordTitle), getString(R.string.TelesrvNoLoginPasswordContactAdmin));
+            return;
+        }
+        AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity());
+        builder.setTitle(getString(R.string.TelesrvNoLoginPasswordTitle));
+        builder.setMessage(getString(R.string.TelesrvNoLoginPasswordText));
+        builder.setPositiveButton(getString(R.string.TelesrvUseCode), (dialog, which) -> useCode.run());
+        builder.setNegativeButton(getString(R.string.Cancel), null);
+        showDialog(builder.create());
+    }
+
+    // Leaves a telesrv page and runs the phone step again, with a login code or a fresh getLoginPassword.
+    private void restartTelesrvLogin(boolean useCode) {
+        views[currentViewNum].onBackPressed(true);
+        setPage(VIEW_PHONE_INPUT, true, null, true);
+        PhoneView phoneView = (PhoneView) views[VIEW_PHONE_INPUT];
+        phoneView.forceCodeLogin = useCode;
+        phoneView.confirmedNumber = true;
+        phoneView.onNextPressed(null);
+    }
+
+    // A password sign-in answered SESSION_PASSWORD_NEEDED: continue on the ordinary 2FA page.
+    private void openTelesrvTwoFactor(String phone) {
+        TL_account.getPassword req = new TL_account.getPassword();
+        ConnectionsManager.getInstance(currentAccount).sendRequest(req, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
+            needHideProgress(false);
+            if (error == null) {
+                TL_account.Password password = (TL_account.Password) response;
+                if (!TwoStepVerificationActivity.canHandleCurrentPassword(password, true)) {
+                    AlertsCreator.showUpdateAppAlert(getParentActivity(), getString(R.string.UpdateAppAlert), true);
+                    return;
+                }
+                Bundle bundle = new Bundle();
+                SerializedData data = new SerializedData(password.getObjectSize());
+                password.serializeToStream(data);
+                bundle.putString("password", Utilities.bytesToHex(data.toByteArray()));
+                bundle.putString("phoneFormated", phone);
+                setPage(VIEW_PASSWORD, true, bundle, false);
+            } else {
+                needShowAlert(getString(R.string.RestorePasswordNoEmailTitle), error.text);
+            }
+        }), ConnectionsManager.RequestFlagFailOnServerErrors | ConnectionsManager.RequestFlagWithoutLogin);
+    }
+
+    private EditTextBoldCursor createTelesrvField(Context context, OutlineTextContainerView outline, boolean password, boolean last) {
+        EditTextBoldCursor field = new EditTextBoldCursor(context);
+        field.setCursorSize(AndroidUtilities.dp(20));
+        field.setCursorWidth(1.5f);
+        field.setBackground(null);
+        field.setImeOptions((last ? EditorInfo.IME_ACTION_DONE : EditorInfo.IME_ACTION_NEXT) | EditorInfo.IME_FLAG_NO_EXTRACT_UI);
+        field.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 18);
+        field.setMaxLines(1);
+        int padding = AndroidUtilities.dp(16);
+        field.setPadding(padding, padding, padding, padding);
+        if (password) {
+            field.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+            field.setTransformationMethod(PasswordTransformationMethod.getInstance());
+            field.setTypeface(Typeface.DEFAULT);
+        } else {
+            field.setInputType(EditorInfo.TYPE_TEXT_FLAG_CAP_SENTENCES | EditorInfo.TYPE_TEXT_FLAG_AUTO_CORRECT);
+        }
+        field.setGravity(LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT);
+        field.setOnFocusChangeListener((v, hasFocus) -> outline.animateSelection(hasFocus ? 1f : 0f));
+        outline.attachEditText(field);
+        outline.addView(field, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP));
+        return field;
+    }
+
+    public class TelesrvPasswordView extends SlideView {
+
+        private final EditTextBoldCursor codeField;
+        private final OutlineTextContainerView outlineCodeField;
+        private final TextView titleView;
+        private final TextView confirmTextView;
+        private final TextView forgotButton;
+        private final RLottieImageView lockImageView;
+
+        private Bundle currentParams;
+        private boolean nextPressed;
+        private boolean challengeRetried;
+        // The pending SRP challenge. Any answer burns it on the server, so it is cleared before use.
+        private TL_account.Password currentPassword;
+        private String requestPhone;
+
+        public TelesrvPasswordView(Context context) {
+            super(context);
+
+            setOrientation(VERTICAL);
+
+            FrameLayout lockFrameLayout = new FrameLayout(context);
+            lockImageView = new RLottieImageView(context);
+            lockImageView.setAnimation(R.raw.tsv_setup_intro, 120, 120);
+            lockImageView.setAutoRepeat(false);
+            lockFrameLayout.addView(lockImageView, LayoutHelper.createFrame(120, 120, Gravity.CENTER_HORIZONTAL));
+            lockFrameLayout.setVisibility(AndroidUtilities.isSmallScreen() || (AndroidUtilities.displaySize.x > AndroidUtilities.displaySize.y && !AndroidUtilities.isTablet()) ? GONE : VISIBLE);
+            addView(lockFrameLayout, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL));
+
+            titleView = new TextView(context);
+            titleView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 18);
+            titleView.setTypeface(AndroidUtilities.bold());
+            titleView.setText(getString(R.string.TelesrvLoginPasswordTitle));
+            titleView.setGravity(Gravity.CENTER);
+            titleView.setLineSpacing(AndroidUtilities.dp(2), 1.0f);
+            addView(titleView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL, 32, 16, 32, 0));
+
+            confirmTextView = new TextView(context);
+            confirmTextView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
+            confirmTextView.setGravity(Gravity.CENTER_HORIZONTAL);
+            confirmTextView.setLineSpacing(AndroidUtilities.dp(2), 1.0f);
+            addView(confirmTextView, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL, 12, 8, 12, 0));
+
+            outlineCodeField = new OutlineTextContainerView(context);
+            outlineCodeField.setText(getString(R.string.EnterPassword));
+            codeField = createTelesrvField(context, outlineCodeField, true, true);
+            codeField.setOnEditorActionListener((textView, i, keyEvent) -> {
+                if (i == EditorInfo.IME_ACTION_DONE) {
+                    onNextPressed(null);
+                    return true;
+                }
+                return false;
+            });
+            addView(outlineCodeField, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL, 16, 32, 16, 0));
+
+            forgotButton = new TextView(context);
+            forgotButton.setGravity(Gravity.CENTER | Gravity.LEFT);
+            forgotButton.setText(getString(R.string.ForgotPassword));
+            forgotButton.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
+            forgotButton.setLineSpacing(AndroidUtilities.dp(2), 1.0f);
+            forgotButton.setPadding(AndroidUtilities.dp(16), 0, AndroidUtilities.dp(16), 0);
+
+            FrameLayout bottomContainer = new FrameLayout(context);
+            bottomContainer.addView(forgotButton, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 56, Gravity.BOTTOM, 0, 0, 0, 32));
+            addView(bottomContainer, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.BOTTOM));
+            VerticalPositionAutoAnimator.attach(forgotButton);
+
+            forgotButton.setOnClickListener(view -> {
+                if (radialProgressView.getTag() != null || getParentActivity() == null) {
+                    return;
+                }
+                AndroidUtilities.hideKeyboard(codeField);
+                if (TelesrvLoginConfig.getInstance(currentAccount).isCodeLoginDisabled()) {
+                    needShowAlert(getString(R.string.RestorePasswordNoEmailTitle), getString(R.string.TelesrvForgotPasswordNoCode));
+                    return;
+                }
+                AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity());
+                builder.setTitle(getString(R.string.RestorePasswordNoEmailTitle));
+                builder.setMessage(getString(R.string.TelesrvForgotPasswordText));
+                builder.setPositiveButton(getString(R.string.TelesrvLoginUseCode), (dialog, which) -> restartTelesrvLogin(true));
+                builder.setNegativeButton(getString(R.string.Cancel), null);
+                showDialog(builder.create());
+            });
+        }
+
+        @Override
+        public void updateColors() {
+            titleView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+            confirmTextView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText6));
+            codeField.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+            codeField.setCursorColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+            codeField.setHintTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteHintText));
+            forgotButton.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText4));
+            outlineCodeField.updateColor();
+        }
+
+        @Override
+        public String getHeaderName() {
+            return getString(R.string.LoginPassword);
+        }
+
+        @Override
+        public boolean needBackButton() {
+            return true;
+        }
+
+        @Override
+        public void onCancelPressed() {
+            nextPressed = false;
+        }
+
+        @Override
+        public void setParams(Bundle params, boolean restore) {
+            if (params == null) {
+                return;
+            }
+            if (params.isEmpty()) {
+                AndroidUtilities.hideKeyboard(codeField);
+                return;
+            }
+            codeField.setText("");
+            currentParams = params;
+            currentPassword = readTelesrvPassword(params);
+            requestPhone = params.getString("phoneFormated");
+            String displayPhone = params.getString("phone");
+            confirmTextView.setText(LocaleController.formatString(R.string.TelesrvLoginPasswordText, displayPhone != null ? displayPhone : "+" + requestPhone));
+        }
+
+        private void onPasscodeError(boolean clear) {
+            if (getParentActivity() == null) {
+                return;
+            }
+            if (clear) {
+                codeField.setText("");
+            }
+            onFieldError(outlineCodeField, true);
+        }
+
+        @Override
+        public void onNextPressed(String code) {
+            if (nextPressed || requestPhone == null) {
+                return;
+            }
+            String password = codeField.getText().toString();
+            if (password.length() == 0) {
+                onPasscodeError(false);
+                return;
+            }
+            nextPressed = true;
+            challengeRetried = false;
+            needShowProgress(0);
+            if (currentPassword == null) {
+                fetchChallenge(() -> submit(password));
+            } else {
+                submit(password);
+            }
+        }
+
+        // Every retry starts from a fresh telesrv.getLoginPassword (it spends the login-code quota).
+        private void fetchChallenge(Runnable onReady) {
+            TL_telesrv.getLoginPassword req = new TL_telesrv.getLoginPassword();
+            req.phone_number = requestPhone;
+            ConnectionsManager.getInstance(currentAccount).sendRequest(req, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
+                if (currentViewNum != VIEW_TELESRV_PASSWORD) {
+                    return;
+                }
+                if (response instanceof TL_account.Password) {
+                    TL_account.Password password = (TL_account.Password) response;
+                    if (password.has_password) {
+                        currentPassword = password;
+                        onReady.run();
+                    } else {
+                        // The account went away meanwhile: the phone step decides again.
+                        nextPressed = false;
+                        needHideProgress(false);
+                        restartTelesrvLogin(false);
+                    }
+                    return;
+                }
+                nextPressed = false;
+                needHideProgress(false);
+                if (error == null || error.text == null) {
+                    return;
+                }
+                if (error.text.equals("PASSWORD_LOGIN_NOT_SET")) {
+                    showTelesrvNoLoginPasswordAlert(() -> restartTelesrvLogin(true));
+                } else {
+                    onSignInError(error);
+                }
+            }), ConnectionsManager.RequestFlagFailOnServerErrors | ConnectionsManager.RequestFlagWithoutLogin);
+        }
+
+        private void submit(String passwordText) {
+            final TL_account.Password challenge = currentPassword;
+            currentPassword = null;
+            if (!(challenge.current_algo instanceof TLRPC.TL_passwordKdfAlgoSHA256SHA256PBKDF2HMACSHA512iter100000SHA256ModPow)) {
+                nextPressed = false;
+                needHideProgress(false);
+                AlertsCreator.showUpdateAppAlert(getParentActivity(), getString(R.string.UpdateAppAlert), true);
+                return;
+            }
+            final TLRPC.TL_passwordKdfAlgoSHA256SHA256PBKDF2HMACSHA512iter100000SHA256ModPow algo = (TLRPC.TL_passwordKdfAlgoSHA256SHA256PBKDF2HMACSHA512iter100000SHA256ModPow) challenge.current_algo;
+            final String phone = requestPhone;
+            Utilities.globalQueue.postRunnable(() -> {
+                byte[] x_bytes = SRPHelper.getX(AndroidUtilities.getStringBytes(passwordText), algo);
+                TLRPC.TL_inputCheckPasswordSRP srp = SRPHelper.startCheck(x_bytes, challenge.srp_id, challenge.srp_B, algo);
+                AndroidUtilities.runOnUIThread(() -> {
+                    if (srp == null) {
+                        TLRPC.TL_error error = new TLRPC.TL_error();
+                        error.text = "PASSWORD_HASH_INVALID";
+                        onSignInResult(passwordText, null, error);
+                        return;
+                    }
+                    TL_telesrv.signInWithPassword req = new TL_telesrv.signInWithPassword();
+                    req.phone_number = phone;
+                    req.password = srp;
+                    ConnectionsManager.getInstance(currentAccount).sendRequest(req, (response, error) -> AndroidUtilities.runOnUIThread(() -> onSignInResult(passwordText, response, error)),
+                            ConnectionsManager.RequestFlagFailOnServerErrors | ConnectionsManager.RequestFlagWithoutLogin);
+                });
+            });
+        }
+
+        private void onSignInResult(String passwordText, TLObject response, TLRPC.TL_error error) {
+            if (currentViewNum != VIEW_TELESRV_PASSWORD) {
+                return;
+            }
+            if (response instanceof TLRPC.TL_auth_authorization) {
+                nextPressed = false;
+                showDoneButton(false, true);
+                postDelayed(() -> {
+                    needHideProgress(false, false);
+                    AndroidUtilities.hideKeyboard(codeField);
+                    onAuthSuccess((TLRPC.TL_auth_authorization) response);
+                }, 150);
+                return;
+            }
+            if (error != null && error.text != null && !challengeRetried &&
+                    (error.text.equals("SRP_ID_INVALID") || error.text.equals("SRP_PASSWORD_CHANGED") || error.text.equals("AUTH_KEY_PERM_EMPTY"))) {
+                // The challenge no longer matches this connection or password: one automatic retry.
+                challengeRetried = true;
+                fetchChallenge(() -> submit(passwordText));
+                return;
+            }
+            nextPressed = false;
+            needHideProgress(false);
+            if (error == null || error.text == null) {
+                needShowAlert(getString(R.string.RestorePasswordNoEmailTitle), getString(R.string.TelesrvLoginFailed));
+                return;
+            }
+            if (error.text.equals("SESSION_PASSWORD_NEEDED")) {
+                needShowProgress(0);
+                openTelesrvTwoFactor(requestPhone);
+            } else {
+                onSignInError(error);
+            }
+        }
+
+        private void onSignInError(TLRPC.TL_error error) {
+            if (error.text.equals("PASSWORD_HASH_INVALID")) {
+                onPasscodeError(true);
+            } else if (error.text.startsWith("FLOOD_WAIT")) {
+                showTelesrvFloodWait(error.text);
+            } else if (error.text.equals("PASSWORD_LOGIN_DISABLED")) {
+                TelesrvLoginConfig telesrvConfig = TelesrvLoginConfig.getInstance(currentAccount);
+                telesrvConfig.markPasswordLoginDisabled();
+                telesrvConfig.refresh(null);
+                restartTelesrvLogin(true);
+            } else if (error.text.equals("SIGN_UP_DISABLED") || error.text.contains("PHONE_NUMBER_INVALID")) {
+                // The account was deleted or is not a user account any more.
+                views[currentViewNum].onBackPressed(true);
+                setPage(VIEW_PHONE_INPUT, true, null, true);
+                needShowAlert(getString(R.string.RestorePasswordNoEmailTitle), getString(R.string.TelesrvLoginFailed));
+            } else if (error.code != -1000) {
+                needShowAlert(getString(R.string.RestorePasswordNoEmailTitle), error.text);
+            }
+        }
+
+        @Override
+        public boolean onBackPressed(boolean force) {
+            nextPressed = false;
+            needHideProgress(true);
+            currentParams = null;
+            currentPassword = null;
+            return true;
+        }
+
+        @Override
+        public void onShow() {
+            super.onShow();
+            AndroidUtilities.runOnUIThread(() -> {
+                if (codeField != null) {
+                    codeField.requestFocus();
+                    codeField.setSelection(codeField.length());
+                    showKeyboard(codeField);
+                    lockImageView.getAnimatedDrawable().setCurrentFrame(0, false);
+                    lockImageView.playAnimation();
+                }
+            }, SHOW_DELAY);
+        }
+    }
+
+    public class TelesrvSignUpView extends SlideView {
+
+        private static final int MAX_NAME_LENGTH = 64;
+
+        private final TextView titleView;
+        private final TextView descriptionView;
+        private final OutlineTextContainerView firstNameOutline;
+        private final OutlineTextContainerView lastNameOutline;
+        private final OutlineTextContainerView passwordOutline;
+        private final OutlineTextContainerView confirmOutline;
+        private final EditTextBoldCursor firstNameField;
+        private final EditTextBoldCursor lastNameField;
+        private final EditTextBoldCursor passwordField;
+        private final EditTextBoldCursor confirmField;
+
+        private Bundle currentParams;
+        private boolean nextPressed;
+        private TL_account.Password currentPassword;
+        private String requestPhone;
+
+        public TelesrvSignUpView(Context context) {
+            super(context);
+
+            setOrientation(VERTICAL);
+
+            titleView = new TextView(context);
+            titleView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 18);
+            titleView.setTypeface(AndroidUtilities.bold());
+            titleView.setText(getString(R.string.TelesrvSignUpTitle));
+            titleView.setGravity(Gravity.CENTER);
+            titleView.setLineSpacing(AndroidUtilities.dp(2), 1.0f);
+            addView(titleView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL, 32, 16, 32, 0));
+
+            descriptionView = new TextView(context);
+            descriptionView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
+            descriptionView.setGravity(Gravity.CENTER_HORIZONTAL);
+            descriptionView.setLineSpacing(AndroidUtilities.dp(2), 1.0f);
+            addView(descriptionView, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL, 12, 8, 12, 0));
+
+            firstNameOutline = new OutlineTextContainerView(context);
+            firstNameOutline.setText(getString(R.string.FirstName));
+            firstNameField = createTelesrvField(context, firstNameOutline, false, false);
+            addView(firstNameOutline, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL, 16, 24, 16, 0));
+
+            lastNameOutline = new OutlineTextContainerView(context);
+            lastNameOutline.setText(getString(R.string.LastName));
+            lastNameField = createTelesrvField(context, lastNameOutline, false, false);
+            addView(lastNameOutline, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL, 16, 16, 16, 0));
+
+            passwordOutline = new OutlineTextContainerView(context);
+            passwordOutline.setText(getString(R.string.EnterPassword));
+            passwordField = createTelesrvField(context, passwordOutline, true, false);
+            addView(passwordOutline, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL, 16, 16, 16, 0));
+
+            confirmOutline = new OutlineTextContainerView(context);
+            confirmOutline.setText(getString(R.string.ReEnterPassword));
+            confirmField = createTelesrvField(context, confirmOutline, true, true);
+            confirmField.setOnEditorActionListener((textView, i, keyEvent) -> {
+                if (i == EditorInfo.IME_ACTION_DONE) {
+                    onNextPressed(null);
+                    return true;
+                }
+                return false;
+            });
+            addView(confirmOutline, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL, 16, 16, 16, 0));
+        }
+
+        @Override
+        public void updateColors() {
+            titleView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+            descriptionView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText6));
+            EditTextBoldCursor[] fields = {firstNameField, lastNameField, passwordField, confirmField};
+            for (EditTextBoldCursor field : fields) {
+                field.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+                field.setCursorColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+                field.setHintTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteHintText));
+            }
+            firstNameOutline.updateColor();
+            lastNameOutline.updateColor();
+            passwordOutline.updateColor();
+            confirmOutline.updateColor();
+        }
+
+        @Override
+        public String getHeaderName() {
+            return getString(R.string.TelesrvSignUpTitle);
+        }
+
+        @Override
+        public boolean needBackButton() {
+            return true;
+        }
+
+        @Override
+        public void onCancelPressed() {
+            nextPressed = false;
+        }
+
+        @Override
+        public void setParams(Bundle params, boolean restore) {
+            if (params == null) {
+                return;
+            }
+            if (params.isEmpty()) {
+                AndroidUtilities.hideKeyboard(firstNameField);
+                return;
+            }
+            firstNameField.setText("");
+            lastNameField.setText("");
+            passwordField.setText("");
+            confirmField.setText("");
+            currentParams = params;
+            currentPassword = readTelesrvPassword(params);
+            requestPhone = params.getString("phoneFormated");
+            String displayPhone = params.getString("phone");
+            descriptionView.setText(LocaleController.formatString(R.string.TelesrvSignUpText, displayPhone != null ? displayPhone : "+" + requestPhone));
+        }
+
+        @Override
+        public void onNextPressed(String code) {
+            if (nextPressed || requestPhone == null || currentPassword == null) {
+                return;
+            }
+            String firstName = firstNameField.getText().toString().trim();
+            String lastName = lastNameField.getText().toString().trim();
+            String password = passwordField.getText().toString();
+            if (firstName.isEmpty() || firstName.length() > MAX_NAME_LENGTH) {
+                onFieldError(firstNameOutline, true);
+                return;
+            }
+            if (lastName.length() > MAX_NAME_LENGTH) {
+                onFieldError(lastNameOutline, true);
+                return;
+            }
+            if (password.isEmpty()) {
+                onFieldError(passwordOutline, true);
+                return;
+            }
+            if (!password.equals(confirmField.getText().toString())) {
+                onFieldError(confirmOutline, true);
+                needShowAlert(getString(R.string.RestorePasswordNoEmailTitle), getString(R.string.PasswordDoNotMatch));
+                return;
+            }
+            if (!(currentPassword.new_algo instanceof TLRPC.TL_passwordKdfAlgoSHA256SHA256PBKDF2HMACSHA512iter100000SHA256ModPow)) {
+                AlertsCreator.showUpdateAppAlert(getParentActivity(), getString(R.string.UpdateAppAlert), true);
+                return;
+            }
+            nextPressed = true;
+            needShowProgress(0);
+
+            final TLRPC.TL_passwordKdfAlgoSHA256SHA256PBKDF2HMACSHA512iter100000SHA256ModPow serverAlgo = (TLRPC.TL_passwordKdfAlgoSHA256SHA256PBKDF2HMACSHA512iter100000SHA256ModPow) currentPassword.new_algo;
+            final String phone = requestPhone;
+            Utilities.globalQueue.postRunnable(() -> {
+                // Same rule as setting a 2FA password: salt1 is the server prefix plus 32 random bytes.
+                TLRPC.TL_passwordKdfAlgoSHA256SHA256PBKDF2HMACSHA512iter100000SHA256ModPow algo = new TLRPC.TL_passwordKdfAlgoSHA256SHA256PBKDF2HMACSHA512iter100000SHA256ModPow();
+                algo.salt1 = new byte[serverAlgo.salt1.length + 32];
+                Utilities.random.nextBytes(algo.salt1);
+                System.arraycopy(serverAlgo.salt1, 0, algo.salt1, 0, serverAlgo.salt1.length);
+                algo.salt2 = serverAlgo.salt2;
+                algo.g = serverAlgo.g;
+                algo.p = serverAlgo.p;
+                byte[] hash = SRPHelper.getVBytes(AndroidUtilities.getStringBytes(password), algo);
+                AndroidUtilities.runOnUIThread(() -> {
+                    if (hash == null) {
+                        nextPressed = false;
+                        needHideProgress(false);
+                        needShowAlert(getString(R.string.RestorePasswordNoEmailTitle), getString(R.string.TelesrvLoginFailed));
+                        return;
+                    }
+                    TL_account.passwordInputSettings settings = new TL_account.passwordInputSettings();
+                    settings.flags = 1;
+                    settings.new_algo = algo;
+                    settings.new_password_hash = hash;
+                    settings.hint = "";
+                    TL_telesrv.signUpWithPassword req = new TL_telesrv.signUpWithPassword();
+                    req.phone_number = phone;
+                    req.first_name = firstName;
+                    req.last_name = lastName;
+                    req.new_settings = settings;
+                    ConnectionsManager.getInstance(currentAccount).sendRequest(req, (response, error) -> AndroidUtilities.runOnUIThread(() -> onSignUpResult(response, error)),
+                            ConnectionsManager.RequestFlagFailOnServerErrors | ConnectionsManager.RequestFlagWithoutLogin);
+                });
+            });
+        }
+
+        private void onSignUpResult(TLObject response, TLRPC.TL_error error) {
+            if (currentViewNum != VIEW_TELESRV_SIGNUP) {
+                return;
+            }
+            nextPressed = false;
+            if (response instanceof TLRPC.TL_auth_authorization) {
+                showDoneButton(false, true);
+                postDelayed(() -> {
+                    needHideProgress(false, false);
+                    AndroidUtilities.hideKeyboard(fragmentView.findFocus());
+                    onAuthSuccess((TLRPC.TL_auth_authorization) response, true);
+                }, 150);
+                return;
+            }
+            needHideProgress(false);
+            if (error == null || error.text == null) {
+                needShowAlert(getString(R.string.RestorePasswordNoEmailTitle), getString(R.string.TelesrvLoginFailed));
+                return;
+            }
+            if (error.text.equals("FIRSTNAME_INVALID")) {
+                onFieldError(firstNameOutline, true);
+            } else if (error.text.equals("PHONE_NUMBER_OCCUPIED")) {
+                // Registered meanwhile: getLoginPassword now answers sign-in or code login.
+                restartTelesrvLogin(false);
+            } else if (error.text.equals("SIGN_UP_DISABLED")) {
+                views[currentViewNum].onBackPressed(true);
+                setPage(VIEW_PHONE_INPUT, true, null, true);
+                needShowAlert(getString(R.string.AppName), getString(R.string.TelesrvSignUpDisabled));
+            } else if (error.text.equals("PASSWORD_LOGIN_DISABLED")) {
+                TelesrvLoginConfig telesrvConfig = TelesrvLoginConfig.getInstance(currentAccount);
+                telesrvConfig.markPasswordLoginDisabled();
+                telesrvConfig.refresh(null);
+                restartTelesrvLogin(true);
+            } else if (error.text.startsWith("FLOOD_WAIT")) {
+                showTelesrvFloodWait(error.text);
+            } else if (error.text.contains("PHONE_NUMBER_INVALID")) {
+                views[currentViewNum].onBackPressed(true);
+                setPage(VIEW_PHONE_INPUT, true, null, true);
+                needShowInvalidAlert(LoginActivity.this, requestPhone, false);
+            } else if (error.text.equals("NEW_SALT_INVALID") || error.text.equals("PASSWORD_HASH_INVALID") || error.text.equals("NEW_SETTINGS_INVALID")) {
+                FileLog.e("telesrv signUpWithPassword rejected: " + error.text);
+                needShowAlert(getString(R.string.RestorePasswordNoEmailTitle), getString(R.string.TelesrvLoginFailed));
+            } else if (error.code != -1000) {
+                needShowAlert(getString(R.string.RestorePasswordNoEmailTitle), error.text);
+            }
+        }
+
+        @Override
+        public boolean onBackPressed(boolean force) {
+            nextPressed = false;
+            needHideProgress(true);
+            currentParams = null;
+            return true;
+        }
+
+        @Override
+        public void onShow() {
+            super.onShow();
+            AndroidUtilities.runOnUIThread(() -> {
+                if (firstNameField != null) {
+                    firstNameField.requestFocus();
+                    firstNameField.setSelection(firstNameField.length());
+                    showKeyboard(firstNameField);
+                }
+            }, SHOW_DELAY);
+        }
+    }
+
+    // endregion
 
     private final static class PhoneInputData {
         private CountrySelectActivity.Country country;
