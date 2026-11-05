@@ -11598,7 +11598,7 @@
     <string name="TelesrvGuestUseCode">Sign in with a code</string>
     <string name="TelesrvGuestUsePassword">Sign in with a password</string>
     <string name="TelesrvGuestDisabled">Guest login is turned off on this server.</string>
-    <string name="TelesrvGuestIpUnavailable">The server couldn't identify your network. Please try again or sign in with your phone number.</string>
+    <string name="TelesrvGuestIpUnavailable">The server couldn\'t identify your network. Please try again or sign in with your phone number.</string>
     <string name="TelesrvGuestPoolExhausted">No guest accounts are available right now. Please try again later.</string>
     <string name="TelesrvGuestPasswordTitle">Keep your guest account</string>
     <string name="TelesrvGuestPasswordText">A guest account can only be recovered from the same network for a limited time. Set a login password to sign in to it anywhere with its phone number.</string>
