@@ -47,9 +47,11 @@ import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.messenger.SharedConfig;
+import org.telegram.messenger.TelesrvLoginConfig;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.tgnet.tl.TL_account;
+import org.telegram.tgnet.tl.TL_telesrv;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.BackDrawable;
@@ -121,6 +123,8 @@ public class PrivacySettingsActivity extends BaseFragment implements Notificatio
     private int securitySectionRow;
     @Keep
     private int passwordRow;
+    private int telesrvLoginPasswordRow = -1;
+    private Boolean telesrvHasLoginPassword;
     private int sessionsRow;
     @Keep
     private int passcodeRow;
@@ -196,6 +200,7 @@ public class PrivacySettingsActivity extends BaseFragment implements Notificatio
         updateRows();
         loadPasswordSettings();
         loadPasskeys();
+        loadTelesrvLoginPassword(true);
 
         getNotificationCenter().addObserver(this, NotificationCenter.privacyRulesUpdated);
         getNotificationCenter().addObserver(this, NotificationCenter.blockedUsersDidLoad);
@@ -487,6 +492,13 @@ public class PrivacySettingsActivity extends BaseFragment implements Notificatio
                     }
                     presentFragment(new TwoStepVerificationSetupActivity(type, currentPassword));
                 }
+            } else if (position == telesrvLoginPasswordRow) {
+                presentFragment(new TelesrvLoginPasswordActivity(telesrvHasLoginPassword, hasPassword -> {
+                    telesrvHasLoginPassword = hasPassword;
+                    if (listAdapter != null && telesrvLoginPasswordRow >= 0) {
+                        listAdapter.notifyItemChanged(telesrvLoginPasswordRow);
+                    }
+                }));
             } else if (position == passkeysRow) {
                 if (Build.VERSION.SDK_INT < 28 || !BuildVars.SUPPORTS_PASSKEYS) return;
                 if (currentPasskeys != null && currentPasskeys.size() > 0) {
@@ -707,9 +719,13 @@ public class PrivacySettingsActivity extends BaseFragment implements Notificatio
 
     public void updateRows(boolean notify) {
         passkeysRow = -1;
+        telesrvLoginPasswordRow = -1;
         rowCount = 0;
 
         securitySectionRow = rowCount++;
+        if (TelesrvLoginConfig.getInstance(currentAccount).isPasswordLoginEnabled()) {
+            telesrvLoginPasswordRow = rowCount++;
+        }
         passwordRow = rowCount++;
         autoDeleteMesages = rowCount++;
         passcodeRow = rowCount++;
@@ -850,6 +866,36 @@ public class PrivacySettingsActivity extends BaseFragment implements Notificatio
                 });
             }
         }, ConnectionsManager.RequestFlagFailOnServerErrors | ConnectionsManager.RequestFlagWithoutLogin);
+    }
+
+    // telesrv login password row: shown only while the server advertises password_login.
+    private void loadTelesrvLoginPassword(boolean refreshConfig) {
+        TelesrvLoginConfig config = TelesrvLoginConfig.getInstance(currentAccount);
+        if (refreshConfig) {
+            boolean wasEnabled = config.isPasswordLoginEnabled();
+            config.refresh(() -> {
+                if (isFinished || wasEnabled == config.isPasswordLoginEnabled()) {
+                    return;
+                }
+                updateRows();
+                loadTelesrvLoginPassword(false);
+            });
+        }
+        if (!config.isPasswordLoginEnabled()) {
+            return;
+        }
+        int reqId = getConnectionsManager().sendRequest(new TL_telesrv.getMyLoginPassword(), (response, error) -> AndroidUtilities.runOnUIThread(() -> {
+            if (response instanceof TL_account.Password) {
+                telesrvHasLoginPassword = ((TL_account.Password) response).has_password;
+                if (listAdapter != null && telesrvLoginPasswordRow >= 0) {
+                    listAdapter.notifyItemChanged(telesrvLoginPasswordRow);
+                }
+            } else if (error != null && "PASSWORD_LOGIN_DISABLED".equals(error.text)) {
+                config.markPasswordLoginDisabled();
+                updateRows();
+            }
+        }), ConnectionsManager.RequestFlagFailOnServerErrors);
+        getConnectionsManager().bindRequestToGuid(reqId, classGuid);
     }
 
     private void loadPasskeys() {
@@ -1020,7 +1066,7 @@ public class PrivacySettingsActivity extends BaseFragment implements Notificatio
         @Override
         public boolean isEnabled(RecyclerView.ViewHolder holder) {
             int position = holder.getAdapterPosition();
-            return position == passcodeRow || position == passwordRow || position == passkeysRow || position == blockedRow || position == sessionsRow || position == secretWebpageRow || position == webSessionsRow ||
+            return position == passcodeRow || position == passwordRow || position == telesrvLoginPasswordRow || position == passkeysRow || position == blockedRow || position == sessionsRow || position == secretWebpageRow || position == webSessionsRow ||
                     position == groupsRow && !getContactsController().getLoadingPrivacyInfo(ContactsController.PRIVACY_RULES_TYPE_INVITE) ||
                     position == lastSeenRow && !getContactsController().getLoadingPrivacyInfo(ContactsController.PRIVACY_RULES_TYPE_LASTSEEN) ||
                     position == callsRow && !getContactsController().getLoadingPrivacyInfo(ContactsController.PRIVACY_RULES_TYPE_CALLS) ||
@@ -1348,6 +1394,14 @@ public class PrivacySettingsActivity extends BaseFragment implements Notificatio
                             value = getString(R.string.PasswordOff);
                         }
                         textCell2.setTextAndValueAndIcon(getString(R.string.TwoStepVerification), value, true, icon, true);
+                    } else if (position == telesrvLoginPasswordRow) {
+                        value = "";
+                        if (telesrvHasLoginPassword == null) {
+                            showLoading = true;
+                        } else {
+                            value = getString(telesrvHasLoginPassword ? R.string.PasswordOn : R.string.PasswordOff);
+                        }
+                        textCell2.setTextAndValueAndIcon(getString(R.string.TelesrvLoginPassword), value, true, R.drawable.msg2_secret, true);
                     } else if (position == passkeysRow) {
                         value = "";
                         if (currentPasskeys == null) {
@@ -1401,7 +1455,7 @@ public class PrivacySettingsActivity extends BaseFragment implements Notificatio
                 return 3;
             } else if (position == botsAndWebsitesShadowRow) {
                 return 4;
-            } else if (position == autoDeleteMesages || position == sessionsRow || position == emailLoginRow || position == passwordRow || position == passkeysRow || position == passcodeRow || position == blockedRow) {
+            } else if (position == autoDeleteMesages || position == sessionsRow || position == emailLoginRow || position == passwordRow || position == telesrvLoginPasswordRow || position == passkeysRow || position == passcodeRow || position == blockedRow) {
                 return 5;
             }
             return 0;
