@@ -365,14 +365,14 @@ void Handshake::processHandshakeResponse_resPQ(TLObject *message, int64_t messag
             if (serverPublicKeys.empty()) {
                 // Self-hosted telesrv server key, for both backends.
                 serverPublicKeys.emplace_back("-----BEGIN RSA PUBLIC KEY-----\n"
-                                              "MIIBCgKCAQEAtPlt6U0dU1qqkVJx7m5gBKr5Iy1vUB7+IsX1qiM0uwGVBNUuMEWW\n"
-                                              "DyMaEWxFWWBGne10mgZyIQ6Q3nf/tKP81LYJvvIsDcxrD3U8JLTJJ5UJGL2ACF0J\n"
-                                              "h/DQ9zLJBf/qlxurKDiPpO3dszYhYsYH5V+17Xqm7+mzdloCViHfDIbL3wZ3n18R\n"
-                                              "JtmuWWHlGrMEc9hnGUgiuu3bPMCNHY4Dxau7t2bWIg9YIS//+i5+rhbtJnP0RpBy\n"
-                                              "vzlESMCcXdqND3l4VPXhGKBl5RYoJuht/901xnnGOf6lrsHUsRZbtd85+iN5UGYZ\n"
-                                              "Jp6IPTpi4fUiCQGGM5qBga0rd5Tt/krUswIDAQAB\n"
+                                              "MIIBCgKCAQEA107kEe7nCQZ0NOTu1F68yTZtKpCAAVd/ioG7FON2stY3L5ZWG4fz\n"
+                                              "0+nxESxv136HpeEm3iTeBwIOgC6Isn+/PoGQY5u7+vijOVb2intE+wSNCJgFbiR3\n"
+                                              "hXTqLABGJBf5OTD3H5eF7FN/VO/rWa0VvSeW3yhYFRVCjqXXy3RGg5vJlVV7uzRx\n"
+                                              "VYj4y+6rzEmB6Au0/IEc8rBj3OfnfoJdn6zS13ifpsCmIo+OR9ZrV4R8wrN0i7G8\n"
+                                              "isQ0z3FAGXf864HMGodtrwABlrTmI3H4yHKmhkXmM7tF6HtX97LmNCnX4j6v6FID\n"
+                                              "v+v9PyqLJt5j30a+MiM+tWXRveI0q2P6fwIDAQAB\n"
                                               "-----END RSA PUBLIC KEY-----");
-                serverPublicKeysFingerprints.push_back(0x5d729d647fa6567c);
+                serverPublicKeysFingerprints.push_back(0xf5046c55aea0a065);
             }
 
             size_t count2 = serverPublicKeysFingerprints.size();

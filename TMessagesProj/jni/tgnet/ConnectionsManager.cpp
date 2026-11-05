@@ -1822,7 +1822,7 @@ void ConnectionsManager::initDatacenters() {
     Datacenter *datacenter;
     if (datacenters.find(2) == datacenters.end()) {
         datacenter = new Datacenter(instanceNum, 2);
-        datacenter->addAddressAndPort("167.104.103.22", 2398, 0, "");
+        datacenter->addAddressAndPort("167.104.102.244", 2398, 0, "");
         datacenters[2] = datacenter;
     }
 }
