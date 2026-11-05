@@ -17,6 +17,8 @@ public class TelesrvLoginConfig {
     private static final String FEATURE_PASSWORD_LOGIN = "password_login";
     private static final String KEY_CODE_LOGIN_DISABLED = "telesrv_code_login_disabled";
     private static final String KEY_SIGN_UP_DISABLED = "telesrv_sign_up_disabled";
+    // Present (true) only while guest login is on: docs/guest-login.md.
+    private static final String KEY_GUEST_LOGIN_ENABLED = "telesrv_guest_login_enabled";
 
     private static final TelesrvLoginConfig[] Instance = new TelesrvLoginConfig[UserConfig.MAX_ACCOUNT_COUNT];
 
@@ -37,6 +39,8 @@ public class TelesrvLoginConfig {
     private boolean passwordLogin;
     private boolean codeLoginDisabled;
     private boolean signUpDisabled;
+    private boolean guestLogin;
+    private boolean hasCachedState;
 
     private boolean loading;
     private boolean refreshed;
@@ -48,6 +52,8 @@ public class TelesrvLoginConfig {
         passwordLogin = preferences.getBoolean("passwordLogin", false);
         codeLoginDisabled = preferences.getBoolean("codeLoginDisabled", false);
         signUpDisabled = preferences.getBoolean("signUpDisabled", false);
+        guestLogin = preferences.getBoolean("guestLogin", false);
+        hasCachedState = preferences.contains("guestLogin");
     }
 
     private SharedPreferences getPreferences() {
@@ -65,6 +71,16 @@ public class TelesrvLoginConfig {
 
     public boolean isSignUpDisabled() {
         return signUpDisabled;
+    }
+
+    public boolean isGuestLoginEnabled() {
+        return guestLogin;
+    }
+
+    // False until a refresh has succeeded once on this device (with this build): the switches
+    // are then unknown, not off.
+    public boolean hasCachedState() {
+        return hasCachedState;
     }
 
     // True once a refresh in this process has finished, successfully or not.
@@ -106,6 +122,7 @@ public class TelesrvLoginConfig {
         boolean newPasswordLogin = false;
         boolean newCodeLoginDisabled = false;
         boolean newSignUpDisabled = false;
+        boolean newGuestLogin = false;
         if (config instanceof TLRPC.TL_jsonObject) {
             ArrayList<TLRPC.TL_jsonObjectValue> values = ((TLRPC.TL_jsonObject) config).value;
             for (int a = 0; a < values.size(); a++) {
@@ -124,16 +141,21 @@ public class TelesrvLoginConfig {
                     newCodeLoginDisabled = value.value instanceof TLRPC.TL_jsonBool && ((TLRPC.TL_jsonBool) value.value).value;
                 } else if (KEY_SIGN_UP_DISABLED.equals(value.key)) {
                     newSignUpDisabled = value.value instanceof TLRPC.TL_jsonBool && ((TLRPC.TL_jsonBool) value.value).value;
+                } else if (KEY_GUEST_LOGIN_ENABLED.equals(value.key)) {
+                    newGuestLogin = value.value instanceof TLRPC.TL_jsonBool && ((TLRPC.TL_jsonBool) value.value).value;
                 }
             }
         }
         passwordLogin = newPasswordLogin;
         codeLoginDisabled = newCodeLoginDisabled;
         signUpDisabled = newSignUpDisabled;
+        guestLogin = newGuestLogin;
+        hasCachedState = true;
         getPreferences().edit()
                 .putBoolean("passwordLogin", passwordLogin)
                 .putBoolean("codeLoginDisabled", codeLoginDisabled)
                 .putBoolean("signUpDisabled", signUpDisabled)
+                .putBoolean("guestLogin", guestLogin)
                 .apply();
     }
 
@@ -142,5 +164,11 @@ public class TelesrvLoginConfig {
         passwordLogin = false;
         codeLoginDisabled = false;
         getPreferences().edit().putBoolean("passwordLogin", false).putBoolean("codeLoginDisabled", false).apply();
+    }
+
+    // Called when the server answers GUEST_LOGIN_DISABLED.
+    public void markGuestLoginDisabled() {
+        guestLogin = false;
+        getPreferences().edit().putBoolean("guestLogin", false).apply();
     }
 }

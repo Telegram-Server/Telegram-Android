@@ -5,7 +5,7 @@ import org.telegram.tgnet.OutputSerializedData;
 import org.telegram.tgnet.TLMethod;
 import org.telegram.tgnet.TLRPC;
 
-// telesrv-only RPCs (phone number + login password). Mirrors _schema/telesrv.tl of
+// telesrv-only RPCs (phone number + login password, guest sign-up). Mirrors _schema/telesrv.tl of
 // github.com/Telegram-Server/td; never sent to official servers. Re-check the wire IDs
 // against telesrv.tl whenever the server's td dependency moves.
 public class TL_telesrv {
@@ -110,6 +110,32 @@ public class TL_telesrv {
             stream.writeInt32(flags);
             current.serializeToStream(stream);
             new_settings.serializeToStream(stream);
+        }
+    }
+
+    // telesrv.signUpAsGuest#c3c587ce flags:# first_name:flags.0?string last_name:flags.1?string = auth.Authorization;
+    // TgSever docs/guest-login.md. Without a name the server generates one.
+    public static class signUpAsGuest extends TLMethod<TLRPC.auth_Authorization> {
+        public static final int constructor = 0xc3c587ce;
+
+        public int flags;
+        public String first_name;
+        public String last_name;
+
+        @Override
+        public TLRPC.auth_Authorization deserializeResponseT(InputSerializedData stream, int constructor, boolean exception) {
+            return TLRPC.auth_Authorization.TLdeserialize(stream, constructor, exception);
+        }
+
+        public void serializeToStream(OutputSerializedData stream) {
+            stream.writeInt32(constructor);
+            stream.writeInt32(flags);
+            if ((flags & 1) != 0) {
+                stream.writeString(first_name);
+            }
+            if ((flags & 2) != 0) {
+                stream.writeString(last_name);
+            }
         }
     }
 }

@@ -262,7 +262,8 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
             VIEW_CODE_PHRASE = 17,
             VIEW_PAY = 18,
             VIEW_TELESRV_PASSWORD = 19,
-            VIEW_TELESRV_SIGNUP = 20;
+            VIEW_TELESRV_SIGNUP = 20,
+            VIEW_TELESRV_GUEST = 21;
 
     public final static int COUNTRY_STATE_NOT_SET_OR_VALID = 0,
             COUNTRY_STATE_EMPTY = 1,
@@ -312,7 +313,8 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
             VIEW_CODE_PHRASE,
             VIEW_PAY,
             VIEW_TELESRV_PASSWORD,
-            VIEW_TELESRV_SIGNUP
+            VIEW_TELESRV_SIGNUP,
+            VIEW_TELESRV_GUEST
     })
     private @interface ViewNumber {}
 
@@ -325,7 +327,11 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
 
     @ViewNumber
     private int currentViewNum;
-    private final SlideView[] views = new SlideView[21];
+    private final SlideView[] views = new SlideView[22];
+    // telesrv guest login: the guest page is the first page and the phone page returns to it.
+    private boolean telesrvGuestRoot;
+    // The user picked "use a login code" on the guest page: skip the login password on the phone page.
+    private boolean telesrvPreferCodeLogin;
     private CustomPhoneKeyboardView keyboardView;
     private ValueAnimator keyboardAnimator;
     private boolean paid;
@@ -693,9 +699,10 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
         views[VIEW_PAY] = new LoginPayView(context);
         views[VIEW_TELESRV_PASSWORD] = new TelesrvPasswordView(context);
         views[VIEW_TELESRV_SIGNUP] = new TelesrvSignUpView(context);
+        views[VIEW_TELESRV_GUEST] = new TelesrvGuestView(context);
 
         if (activityMode == MODE_LOGIN) {
-            TelesrvLoginConfig.getInstance(currentAccount).refresh(null);
+            TelesrvLoginConfig.getInstance(currentAccount).refresh(this::onTelesrvLoginConfigRefreshed);
         }
 
         for (int a = 0; a < views.length; a++) {
@@ -740,6 +747,12 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
                 savedInstanceState = null;
                 clearCurrentState();
             }
+        }
+        telesrvGuestRoot = canOfferTelesrvGuestLogin();
+        if (telesrvGuestRoot && savedInstanceState == null) {
+            currentViewNum = VIEW_TELESRV_GUEST;
+        } else if (!telesrvGuestRoot && currentViewNum == VIEW_TELESRV_GUEST) {
+            currentViewNum = VIEW_PHONE_INPUT;
         }
 
         floatingButton = new FragmentFloatingButton(context, resourceProvider);
@@ -1110,6 +1123,26 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
     public boolean onBackPressed(boolean invoked) {
         if (emailChangeIsSuggestion && currentViewNum == VIEW_ADD_EMAIL) {
             return false;
+        }
+
+        if (currentViewNum == VIEW_PHONE_INPUT && telesrvGuestRoot) {
+            if (invoked) {
+                views[currentViewNum].onBackPressed(true);
+                telesrvPreferCodeLogin = false;
+                setPage(VIEW_TELESRV_GUEST, true, null, true);
+            }
+            return false;
+        }
+        if (currentViewNum == VIEW_TELESRV_GUEST) {
+            if (invoked) {
+                for (int a = 0; a < views.length; a++) {
+                    if (views[a] != null) {
+                        views[a].onDestroyActivity();
+                    }
+                }
+                clearCurrentState();
+            }
+            return true;
         }
 
         if (currentViewNum == VIEW_PHONE_INPUT || activityMode == MODE_CHANGE_LOGIN_EMAIL && currentViewNum == VIEW_ADD_EMAIL) {
@@ -3110,7 +3143,7 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
                     });
                     return;
                 }
-                boolean useCode = forceCodeLogin;
+                boolean useCode = forceCodeLogin || telesrvPreferCodeLogin;
                 forceCodeLogin = false;
                 if (telesrvConfig.isPasswordLoginEnabled() && !useCode) {
                     requestTelesrvLoginPassword(phone, code);
@@ -3306,7 +3339,7 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
 
         // Password login needs none of the phone permissions that code auto-detection asks for.
         private boolean willUseTelesrvPasswordLogin() {
-            if (activityMode != MODE_LOGIN || forceCodeLogin) {
+            if (activityMode != MODE_LOGIN || forceCodeLogin || telesrvPreferCodeLogin) {
                 return false;
             }
             TelesrvLoginConfig telesrvConfig = TelesrvLoginConfig.getInstance(currentAccount);
@@ -3518,6 +3551,12 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
                     requestPasskey(false);
                 }
             }, SHOW_DELAY);
+        }
+
+        // With telesrv guest login the phone page is not the first page: back returns to the guest page.
+        @Override
+        public boolean needBackButton() {
+            return telesrvGuestRoot;
         }
 
         @Override
@@ -9541,6 +9580,243 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
             }, SHOW_DELAY);
         }
     }
+
+    // region telesrv guest login (TgSever docs/guest-login.md)
+
+    // Only on the first account's login: a guest sign-up from the same IP would hand an
+    // added account the same guest account again. Without cached switches the page waits for them.
+    private boolean canOfferTelesrvGuestLogin() {
+        if (activityMode != MODE_LOGIN || newAccount) {
+            return false;
+        }
+        TelesrvLoginConfig config = TelesrvLoginConfig.getInstance(currentAccount);
+        return config.isGuestLoginEnabled() || !config.hasCachedState() && !config.isRefreshed();
+    }
+
+    private void onTelesrvLoginConfigRefreshed() {
+        if (fragmentView == null || isFinished) {
+            return;
+        }
+        if (views[VIEW_TELESRV_GUEST] instanceof TelesrvGuestView) {
+            ((TelesrvGuestView) views[VIEW_TELESRV_GUEST]).updateEntries();
+        }
+        boolean guestRoot = canOfferTelesrvGuestLogin();
+        if (guestRoot == telesrvGuestRoot) {
+            return;
+        }
+        if (!guestRoot) {
+            // Guest login is off: the phone page is the first page again.
+            telesrvGuestRoot = false;
+            telesrvPreferCodeLogin = false;
+            if (currentViewNum == VIEW_TELESRV_GUEST) {
+                setPage(VIEW_PHONE_INPUT, false, null, false);
+            } else if (currentViewNum == VIEW_PHONE_INPUT) {
+                backButtonView.setVisibility(View.GONE);
+            }
+        } else if (currentViewNum == VIEW_PHONE_INPUT) {
+            // Turned on since the cached switches were saved: offer it unless the user is already typing a number.
+            PhoneView phoneView = (PhoneView) views[VIEW_PHONE_INPUT];
+            telesrvGuestRoot = true;
+            if (phoneView.phoneField == null || phoneView.phoneField.length() == 0) {
+                setPage(VIEW_TELESRV_GUEST, false, null, true);
+            } else {
+                backButtonView.setVisibility(View.VISIBLE);
+            }
+        }
+    }
+
+    // After a guest sign-up: the account can only be recovered from the same network for a while.
+    private static void showTelesrvGuestPasswordReminder(int account) {
+        if (!TelesrvLoginConfig.getInstance(account).isPasswordLoginEnabled()) {
+            return;
+        }
+        AndroidUtilities.runOnUIThread(() -> {
+            BaseFragment fragment = LaunchActivity.getLastFragment();
+            if (fragment == null || fragment.getParentActivity() == null || UserConfig.selectedAccount != account) {
+                return;
+            }
+            AlertDialog.Builder builder = new AlertDialog.Builder(fragment.getParentActivity());
+            builder.setTitle(getString(R.string.TelesrvGuestPasswordTitle));
+            builder.setMessage(getString(R.string.TelesrvGuestPasswordText));
+            builder.setPositiveButton(getString(R.string.TelesrvGuestPasswordSet), (dialog, which) -> {
+                BaseFragment last = LaunchActivity.getLastFragment();
+                if (last != null) {
+                    last.presentFragment(new TelesrvLoginPasswordActivity(false, null));
+                }
+            });
+            builder.setNegativeButton(getString(R.string.TelesrvGuestPasswordLater), null);
+            fragment.showDialog(builder.create());
+        }, 1000);
+    }
+
+    public class TelesrvGuestView extends SlideView {
+
+        private final ImageView iconView;
+        private final TextView titleView;
+        private final TextView descriptionView;
+        private final ButtonWithCounterView guestButton;
+        private final TextView codeButton;
+        private final TextView passwordButton;
+        private int requestId;
+
+        public TelesrvGuestView(Context context) {
+            super(context);
+
+            setOrientation(VERTICAL);
+            setGravity(Gravity.CENTER_HORIZONTAL);
+
+            iconView = new ImageView(context);
+            iconView.setImageDrawable(ContextCompat.getDrawable(context, R.mipmap.ic_launcher_round));
+            iconView.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            iconView.setVisibility(AndroidUtilities.isSmallScreen() || (AndroidUtilities.displaySize.x > AndroidUtilities.displaySize.y && !AndroidUtilities.isTablet()) ? GONE : VISIBLE);
+            addView(iconView, LayoutHelper.createLinear(110, 110, Gravity.CENTER_HORIZONTAL, 0, 24, 0, 0));
+
+            titleView = new TextView(context);
+            titleView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 22);
+            titleView.setTypeface(AndroidUtilities.bold());
+            titleView.setText(getString(R.string.AppName));
+            titleView.setGravity(Gravity.CENTER);
+            addView(titleView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL, 32, 20, 32, 0));
+
+            descriptionView = new TextView(context);
+            descriptionView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
+            descriptionView.setGravity(Gravity.CENTER_HORIZONTAL);
+            descriptionView.setLineSpacing(AndroidUtilities.dp(2), 1.0f);
+            descriptionView.setText(getString(R.string.TelesrvGuestText));
+            addView(descriptionView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL, 24, 10, 24, 0));
+
+            guestButton = new ButtonWithCounterView(context, null).setRound();
+            guestButton.setText(getString(R.string.TelesrvGuestContinue), false);
+            guestButton.setOnClickListener(v -> signUpAsGuest());
+            addView(guestButton, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 48, Gravity.CENTER_HORIZONTAL, 16, 36, 16, 0));
+
+            codeButton = createLink(context, getString(R.string.TelesrvGuestUseCode));
+            codeButton.setOnClickListener(v -> openPhonePage(true));
+            addView(codeButton, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, 44, Gravity.CENTER_HORIZONTAL, 16, 16, 16, 0));
+
+            passwordButton = createLink(context, getString(R.string.TelesrvGuestUsePassword));
+            passwordButton.setOnClickListener(v -> openPhonePage(false));
+            addView(passwordButton, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, 44, Gravity.CENTER_HORIZONTAL, 16, 4, 16, 0));
+
+            updateEntries();
+        }
+
+        private TextView createLink(Context context, String text) {
+            TextView link = new TextView(context);
+            link.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
+            link.setGravity(Gravity.CENTER);
+            link.setPadding(AndroidUtilities.dp(16), 0, AndroidUtilities.dp(16), 0);
+            link.setText(text);
+            link.setBackground(Theme.createSelectorDrawable(Theme.multAlpha(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText4), .12f), Theme.RIPPLE_MASK_ROUNDRECT_6DP));
+            return link;
+        }
+
+        // Code login can only be off while password login is on, so at least one link stays.
+        void updateEntries() {
+            TelesrvLoginConfig config = TelesrvLoginConfig.getInstance(currentAccount);
+            codeButton.setVisibility(config.isCodeLoginDisabled() ? GONE : VISIBLE);
+            passwordButton.setVisibility(config.isPasswordLoginEnabled() ? VISIBLE : GONE);
+        }
+
+        private void openPhonePage(boolean useCode) {
+            if (requestId != 0) {
+                return;
+            }
+            telesrvPreferCodeLogin = useCode;
+            setPage(VIEW_PHONE_INPUT, true, null, false);
+        }
+
+        private void signUpAsGuest() {
+            if (requestId != 0) {
+                return;
+            }
+            TL_telesrv.signUpAsGuest req = new TL_telesrv.signUpAsGuest();
+            ConnectionsManager.getInstance(currentAccount).cleanup(false);
+            guestButton.setLoading(true);
+            requestId = ConnectionsManager.getInstance(currentAccount).sendRequest(req, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
+                requestId = 0;
+                guestButton.setLoading(false);
+                if (currentViewNum != VIEW_TELESRV_GUEST) {
+                    return;
+                }
+                if (response instanceof TLRPC.TL_auth_authorization) {
+                    int account = currentAccount;
+                    // A reused guest account may already have chats: not treated as a fresh sign-up.
+                    onAuthSuccess((TLRPC.TL_auth_authorization) response, false);
+                    showTelesrvGuestPasswordReminder(account);
+                    return;
+                }
+                onGuestError(error);
+            }), ConnectionsManager.RequestFlagFailOnServerErrors | ConnectionsManager.RequestFlagWithoutLogin);
+        }
+
+        private void onGuestError(TLRPC.TL_error error) {
+            if (error == null || error.text == null) {
+                needShowAlert(getString(R.string.RestorePasswordNoEmailTitle), getString(R.string.TelesrvLoginFailed));
+                return;
+            }
+            if (error.text.equals("GUEST_LOGIN_DISABLED")) {
+                TelesrvLoginConfig config = TelesrvLoginConfig.getInstance(currentAccount);
+                config.markGuestLoginDisabled();
+                config.refresh(null);
+                telesrvGuestRoot = false;
+                telesrvPreferCodeLogin = false;
+                setPage(VIEW_PHONE_INPUT, true, null, false);
+                needShowAlert(getString(R.string.AppName), getString(R.string.TelesrvGuestDisabled));
+            } else if (error.text.equals("GUEST_IP_UNAVAILABLE")) {
+                needShowAlert(getString(R.string.RestorePasswordNoEmailTitle), getString(R.string.TelesrvGuestIpUnavailable));
+            } else if (error.text.equals("GUEST_NUMBER_POOL_EXHAUSTED")) {
+                needShowAlert(getString(R.string.RestorePasswordNoEmailTitle), getString(R.string.TelesrvGuestPoolExhausted));
+            } else if (error.text.equals("SESSION_PASSWORD_NEEDED")) {
+                // A reused guest account that turned on two-step verification meanwhile.
+                openTelesrvTwoFactor("");
+            } else if (error.text.startsWith("FLOOD_WAIT")) {
+                showTelesrvFloodWait(error.text);
+            } else if (error.code != -1000) {
+                needShowAlert(getString(R.string.RestorePasswordNoEmailTitle), error.text);
+            }
+        }
+
+        @Override
+        public void updateColors() {
+            titleView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+            descriptionView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText6));
+            int linkColor = Theme.getColor(Theme.key_windowBackgroundWhiteBlueText4);
+            codeButton.setTextColor(linkColor);
+            passwordButton.setTextColor(linkColor);
+        }
+
+        @Override
+        public String getHeaderName() {
+            return getString(R.string.AppName);
+        }
+
+        @Override
+        public boolean needBackButton() {
+            return false;
+        }
+
+        @Override
+        public void onShow() {
+            super.onShow();
+            if (fragmentView != null) {
+                AndroidUtilities.hideKeyboard(fragmentView.findFocus());
+            }
+            updateEntries();
+        }
+
+        @Override
+        public boolean onBackPressed(boolean force) {
+            if (requestId != 0) {
+                ConnectionsManager.getInstance(currentAccount).cancelRequest(requestId, true);
+                requestId = 0;
+                guestButton.setLoading(false);
+            }
+            return true;
+        }
+    }
+
+    // endregion
 
     // endregion
 
