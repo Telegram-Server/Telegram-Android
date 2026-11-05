@@ -140,6 +140,11 @@ android {
 
         vectorDrawables.generatedDensities = ['mdpi', 'hdpi', 'xhdpi', 'xxhdpi']
 
+        // telesrv public link domain (the server's TELESRV_PUBLIC_BASE_URL host): opened in the
+        // app like t.me links, from chats and from other apps.
+        manifestPlaceholders = [telesrvLinkHost: TELESRV_LINK_HOST]
+        buildConfigField "String", "TELESRV_LINK_HOST", "\"" + TELESRV_LINK_HOST + "\""
+
         multiDexEnabled true
 
         // -PABI_FILTERS=arm64-v8a (comma-separated) builds the native library for those ABIs only.

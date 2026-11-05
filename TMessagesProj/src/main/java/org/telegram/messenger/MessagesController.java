@@ -1587,7 +1587,8 @@ public class MessagesController extends BaseController implements NotificationCe
         maxFaveStickersCount = mainPreferences.getInt("maxFaveStickersCount", 5);
         maxEditTime = mainPreferences.getInt("maxEditTime", 3600);
         ratingDecay = mainPreferences.getInt("ratingDecay", 2419200);
-        linkPrefix = mainPreferences.getString("linkPrefix", "t.me");
+        // telesrv: until the first help.config, links use the server's domain from the build.
+        linkPrefix = mainPreferences.getString("linkPrefix", TextUtils.isEmpty(TelesrvLinks.getBuildLinkHost()) ? "t.me" : TelesrvLinks.getBuildLinkHost());
         callReceiveTimeout = mainPreferences.getInt("callReceiveTimeout", 20000);
         callRingTimeout = mainPreferences.getInt("callRingTimeout", 90000);
         callConnectTimeout = mainPreferences.getInt("callConnectTimeout", 30000);

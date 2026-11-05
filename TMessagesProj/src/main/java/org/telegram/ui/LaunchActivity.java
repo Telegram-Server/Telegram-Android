@@ -132,6 +132,7 @@ import org.telegram.messenger.R;
 import org.telegram.messenger.SendMessagesHelper;
 import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.SharedPrefsHelper;
+import org.telegram.messenger.TelesrvLinks;
 import org.telegram.messenger.TopicsController;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
@@ -1966,6 +1967,12 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                                 case "http":
                                 case "https": {
                                     String host = data.getHost().toLowerCase();
+                                    // telesrv: the server's public link domain is handled like t.me.
+                                    Uri telesrvUri = TelesrvLinks.toTelegramUri(data);
+                                    if (telesrvUri != null) {
+                                        data = telesrvUri;
+                                        host = "t.me";
+                                    }
                                     Matcher prefixMatcher = PREFIX_T_ME_PATTERN.matcher(host);
                                     boolean isPrefix = prefixMatcher.find();
                                     if (host.equals("telegram.me") || host.equals("t.me") || host.equals("telegram.dog") || isPrefix) {

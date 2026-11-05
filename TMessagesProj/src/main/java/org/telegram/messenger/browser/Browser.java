@@ -32,6 +32,7 @@ import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.messenger.ShareBroadcastReceiver;
+import org.telegram.messenger.TelesrvLinks;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.support.customtabs.CustomTabsCallback;
 import org.telegram.messenger.support.customtabs.CustomTabsClient;
@@ -676,6 +677,13 @@ public class Browser {
                 forceBrowser[0] = true;
             }
             return false;
+        }
+
+        // telesrv: the server's public link domain is handled like t.me.
+        Uri telesrvUri = TelesrvLinks.toTelegramUri(uri);
+        if (telesrvUri != null) {
+            uri = telesrvUri;
+            host = "t.me";
         }
 
         Matcher prefixMatcher = LaunchActivity.PREFIX_T_ME_PATTERN.matcher(host);
