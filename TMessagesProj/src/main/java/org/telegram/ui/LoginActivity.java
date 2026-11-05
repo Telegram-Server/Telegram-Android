@@ -150,6 +150,7 @@ import org.telegram.tgnet.RequestDelegate;
 import org.telegram.tgnet.SerializedData;
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
+import org.telegram.tgnet.Vector;
 import org.telegram.tgnet.tl.TL_account;
 import org.telegram.tgnet.tl.TL_telesrv;
 import org.telegram.tgnet.tl.TL_update;
@@ -538,6 +539,7 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
         }
         getNotificationCenter().removeObserver(this, NotificationCenter.didUpdateConnectionState);
         getNotificationCenter().removeObserver(this, NotificationCenter.newSuggestionsAvailable);
+        stopTelesrvContinueText();
     }
 
     @Override
@@ -704,6 +706,7 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
         if (activityMode == MODE_LOGIN) {
             TelesrvLoginConfig.getInstance(currentAccount).refresh(this::onTelesrvLoginConfigRefreshed);
         }
+        startTelesrvContinueText();
 
         for (int a = 0; a < views.length; a++) {
             views[a].setVisibility(a == 0 ? View.VISIBLE : View.GONE);
@@ -2106,6 +2109,8 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
             subtitleView.setGravity(Gravity.CENTER);
             subtitleView.setLineSpacing(dp(2), 1.0f);
             addView(subtitleView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL, 32, 8, 32, 0));
+            // MskChat: "Continue in <language>", formerly on the intro page.
+            addView(createTelesrvContinueView(context), LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, 36, Gravity.CENTER_HORIZONTAL, 16, 4, 16, 0));
 
             countryButton = new TextViewSwitcher(context);
             countryButton.setFactory(() -> {
@@ -9581,6 +9586,156 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
         }
     }
 
+    // region "Continue in <language>" on the login page (MskChat has no IntroActivity, which showed it)
+
+    private final ArrayList<TextView> telesrvContinueViews = new ArrayList<>();
+    private LocaleController.LocaleInfo telesrvContinueLocale;
+    private String telesrvContinueText;
+    private boolean telesrvContinueStarted;
+    private boolean telesrvContinuePressed;
+    private final NotificationCenter.NotificationCenterDelegate telesrvLanguageObserver = new NotificationCenter.NotificationCenterDelegate() {
+        @Override
+        public void didReceivedNotification(int id, int account, Object... args) {
+            if (id == NotificationCenter.suggestedLangpack || id == NotificationCenter.configLoaded) {
+                checkTelesrvContinueText();
+            }
+        }
+    };
+
+    private boolean canOfferTelesrvContinueLanguage() {
+        return activityMode == MODE_LOGIN && !newAccount;
+    }
+
+    // Same as IntroActivity: load the server's languages and the suggested language's link text.
+    private void startTelesrvContinueText() {
+        if (telesrvContinueStarted || !canOfferTelesrvContinueLanguage()) {
+            return;
+        }
+        telesrvContinueStarted = true;
+        NotificationCenter.getGlobalInstance().addObserver(telesrvLanguageObserver, NotificationCenter.suggestedLangpack);
+        getNotificationCenter().addObserver(telesrvLanguageObserver, NotificationCenter.configLoaded);
+        getConnectionsManager().updateDcSettings();
+        LocaleController.getInstance().loadRemoteLanguages(currentAccount);
+        checkTelesrvContinueText();
+    }
+
+    private void stopTelesrvContinueText() {
+        if (!telesrvContinueStarted) {
+            return;
+        }
+        telesrvContinueStarted = false;
+        NotificationCenter.getGlobalInstance().removeObserver(telesrvLanguageObserver, NotificationCenter.suggestedLangpack);
+        getNotificationCenter().removeObserver(telesrvLanguageObserver, NotificationCenter.configLoaded);
+    }
+
+    private TextView createTelesrvContinueView(Context context) {
+        TextView view = new TextView(context);
+        view.setGravity(Gravity.CENTER);
+        view.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
+        view.setPadding(AndroidUtilities.dp(16), 0, AndroidUtilities.dp(16), 0);
+        view.setOnClickListener(v -> applyTelesrvContinueLanguage());
+        telesrvContinueViews.add(view);
+        updateTelesrvContinueViews();
+        return view;
+    }
+
+    private void updateTelesrvContinueViews() {
+        boolean show = canOfferTelesrvContinueLanguage() && telesrvContinueText != null;
+        for (int a = 0; a < telesrvContinueViews.size(); a++) {
+            TextView view = telesrvContinueViews.get(a);
+            view.setText(telesrvContinueText);
+            view.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText4));
+            view.setVisibility(show ? View.VISIBLE : View.GONE);
+        }
+    }
+
+    // IntroActivity.checkContinueText: offer the suggested (or system) language when the server has it,
+    // or English when that language is already in use.
+    private void checkTelesrvContinueText() {
+        LocaleController.LocaleInfo englishInfo = null;
+        LocaleController.LocaleInfo systemInfo = null;
+        LocaleController.LocaleInfo currentLocaleInfo = LocaleController.getInstance().getCurrentLocaleInfo();
+        String systemLang = getMessagesController().suggestedLangCode;
+        java.util.Locale systemLocale = LocaleController.getInstance().getSystemDefaultLocale();
+        if (systemLang == null || systemLang.equals("en") && systemLocale.getLanguage() != null && !systemLocale.getLanguage().equals("en")) {
+            systemLang = systemLocale.getLanguage();
+            if (systemLang == null) {
+                systemLang = "en";
+            }
+        }
+
+        String arg = systemLang.contains("-") ? systemLang.split("-")[0] : systemLang;
+        String alias = LocaleController.getLocaleAlias(arg);
+        for (int a = 0; a < LocaleController.getInstance().languages.size(); a++) {
+            LocaleController.LocaleInfo info = LocaleController.getInstance().languages.get(a);
+            if (info.shortName.equals("en")) {
+                englishInfo = info;
+            }
+            if (info.shortName.replace("_", "-").equals(systemLang) || info.shortName.equals(arg) || info.shortName.equals(alias)) {
+                systemInfo = info;
+            }
+            if (englishInfo != null && systemInfo != null) {
+                break;
+            }
+        }
+        if (englishInfo == null || systemInfo == null || englishInfo == systemInfo) {
+            return;
+        }
+        final LocaleController.LocaleInfo targetInfo = systemInfo != currentLocaleInfo ? systemInfo : englishInfo;
+        TLRPC.TL_langpack_getStrings req = new TLRPC.TL_langpack_getStrings();
+        req.lang_code = targetInfo.getLangCode();
+        req.keys.add("ContinueOnThisLanguage");
+        final String finalSystemLang = systemLang;
+        getConnectionsManager().sendRequest(req, (response, error) -> {
+            if (!(response instanceof Vector)) {
+                return;
+            }
+            Vector vector = (Vector) response;
+            if (vector.objects.isEmpty() || !(vector.objects.get(0) instanceof TLRPC.TL_langPackString)) {
+                return;
+            }
+            final TLRPC.TL_langPackString string = (TLRPC.TL_langPackString) vector.objects.get(0);
+            AndroidUtilities.runOnUIThread(() -> {
+                if (isFinished || telesrvContinuePressed) {
+                    return;
+                }
+                telesrvContinueLocale = targetInfo;
+                telesrvContinueText = string.value;
+                MessagesController.getGlobalMainSettings().edit().putString("language_showed2", finalSystemLang.toLowerCase()).apply();
+                updateTelesrvContinueViews();
+            });
+        }, ConnectionsManager.RequestFlagWithoutLogin);
+    }
+
+    // Applies the language, then reopens the login page so that it is built with the new strings.
+    private void applyTelesrvContinueLanguage() {
+        if (telesrvContinuePressed || telesrvContinueLocale == null || getParentActivity() == null) {
+            return;
+        }
+        telesrvContinuePressed = true;
+        AlertDialog loaderDialog = new AlertDialog(getParentActivity(), AlertDialog.ALERT_TYPE_SPINNER);
+        loaderDialog.setCanCancel(false);
+        loaderDialog.showDelayed(1000);
+        NotificationCenter.getGlobalInstance().addObserver(new NotificationCenter.NotificationCenterDelegate() {
+            @Override
+            public void didReceivedNotification(int id, int account, Object... args) {
+                if (id != NotificationCenter.reloadInterface) {
+                    return;
+                }
+                loaderDialog.dismiss();
+                NotificationCenter.getGlobalInstance().removeObserver(this, id);
+                AndroidUtilities.runOnUIThread(() -> {
+                    if (!isFinished) {
+                        presentFragment(new LoginActivity(), true, true);
+                    }
+                }, 100);
+            }
+        }, NotificationCenter.reloadInterface);
+        LocaleController.getInstance().applyLanguage(telesrvContinueLocale, true, false, currentAccount);
+    }
+
+    // endregion
+
     // region telesrv guest login (TgSever docs/guest-login.md)
 
     // Only on the first account's login: a guest sign-up from the same IP would hand an
@@ -9697,6 +9852,8 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
             passwordButton = createLink(context, getString(R.string.TelesrvGuestUsePassword));
             passwordButton.setOnClickListener(v -> openPhonePage(false));
             addView(passwordButton, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, 44, Gravity.CENTER_HORIZONTAL, 16, 4, 16, 0));
+
+            addView(createTelesrvContinueView(context), LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, 44, Gravity.CENTER_HORIZONTAL, 16, 20, 16, 0));
 
             updateEntries();
         }
