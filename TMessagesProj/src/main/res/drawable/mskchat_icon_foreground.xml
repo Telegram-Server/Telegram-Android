@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- MskChat launcher foreground (also the monochrome layer): the robot of m-chat.svg in the 108dp adaptive-icon space. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:translateX="8.8560"
+        android:translateY="20.5600"
+        android:scaleX="0.088"
+        android:scaleY="0.088">
+        <path android:fillColor="#FFFFFFFF" android:fillType="evenOdd" android:pathData="M503 119 C488 114 477 102 477 87 A36 36 0 1 1 525 121 L525 142 Q525 153 537 158 Q551 164 560 181 Q566 193 579 193 H447 Q458 193 465 179 Q475 163 491 157 Q503 153 503 142Z" />
+        <path android:fillColor="#FFFFFFFF" android:fillType="evenOdd" android:pathData="M244 332 C217 332 196 352 196 379 C196 406 217 426 244 426Z" />
+        <path android:fillColor="#FFFFFFFF" android:fillType="evenOdd" android:pathData="M782 332 C809 332 830 352 830 379 C830 406 809 426 782 426Z" />
+        <path android:fillColor="#FFFFFFFF" android:fillType="evenOdd" android:pathData="M370 192 H655 C731 192 790 250 790 324 V435 C790 508 735 562 665 566 L484 701 Q471 709 475 694 L511 580 Q517 566 502 566 H370 C295 566 236 509 236 435 V324 C236 250 295 192 370 192Z M370 257 C331 257 302 284 302 323 V435 C302 474 330 502 370 502 H655 C696 502 724 474 724 435 V323 C724 284 696 257 655 257Z" />
+        <path android:fillColor="#FFFFFFFF" android:fillType="evenOdd" android:pathData="M384 351 A36 36 0 1 0 456 351 A36 36 0 1 0 384 351Z" />
+        <path android:fillColor="#FFFFFFFF" android:fillType="evenOdd" android:pathData="M570 351 A36 36 0 1 0 642 351 A36 36 0 1 0 570 351Z" />
+        <path android:fillColor="#FFFFFFFF" android:fillType="evenOdd" android:pathData="M474 417 H552 Q560 417 559 425 C555 448 538 466 513 466 C489 466 471 448 467 426 Q465 417 474 417Z" />
+    </group>
+</vector>
